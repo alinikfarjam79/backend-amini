@@ -5,8 +5,8 @@ const morgan = require("morgan");
 
 const env = require("./config/env");
 // const userRoutes = require("./modules/user/user.routes");
-// const notFoundMiddleware = require("./middlewares/notFound.middleware");
-// const errorMiddleware = require("./middlewares/error.middleware");
+const notFoundMiddleware = require("./middlewares/notFound.middleware");
+const errorMiddleware = require("./middlewares/error.middleware");
 
 const app = express();
 
@@ -28,7 +28,7 @@ app.get("/health", (req, res) => {
 
 // app.use("/api/users", userRoutes);
 
-// app.use(notFoundMiddleware);
-// app.use(errorMiddleware);
+app.use(notFoundMiddleware);
+app.use(errorMiddleware);
 
 module.exports = app;
