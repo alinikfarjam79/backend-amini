@@ -4,14 +4,25 @@ const helmet = require("helmet");
 const morgan = require("morgan");
 
 const env = require("./config/env");
-// const userRoutes = require("./modules/user/user.routes");
-const notFoundMiddleware = require("./middlewares/notFound.middleware");
-const errorMiddleware = require("./middlewares/error.middleware");
+const routes = require("./routes");
+
+const apiRateLimiter = require("./shared/middlewares/apiRateLimit.middleware");
+const notFoundMiddleware = require("./shared/middlewares/notFound.middleware");
+const errorMiddleware = require("./shared/middlewares/error.middleware");
 
 const app = express();
 
 app.use(helmet());
-app.use(cors({ origin: env.clientUrl, credentials: true }));
+
+app.use(
+  cors({
+    origin: env.clientUrl,
+    credentials: true,
+  })
+);
+
+app.use(apiRateLimiter);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -26,7 +37,7 @@ app.get("/health", (req, res) => {
   });
 });
 
-// app.use("/api/users", userRoutes);
+app.use("/api", routes);
 
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);
