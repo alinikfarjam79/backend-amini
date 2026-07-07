@@ -4,25 +4,40 @@ const userRepository = require("./user.repository");
 const AppError = require("../../shared/utils/AppError");
 const pick = require("../../shared/utils/pick");
 const ROLES = require("../../shared/constants/roles");
+const LOGIN_METHODS = require("../../shared/constants/loginMethods");
+const { normalizeIranPhoneNumber } = require("../../shared/utils/phoneNumber");
 
 const createInitialUser = async (payload) => {
-  const existingUser = await userRepository.findByUsername(payload.username);
+  const phoneNumber = normalizeIranPhoneNumber(payload.phoneNumber);
+  const existingUser = await userRepository.findByPhoneNumber(phoneNumber);
 
   if (existingUser) {
-    throw new AppError("Username already exists", 409);
+    throw new AppError("Phone number already exists", 409);
   }
 
-  const hashedPassword = await bcrypt.hash(payload.password, 12);
+  const loginMethod = payload.loginMethod || LOGIN_METHODS.PASSWORD;
+  const hashedPassword = payload.password
+    ? await bcrypt.hash(payload.password, 12)
+    : undefined;
+  const hashedOtpCode = payload.otpCode
+    ? await bcrypt.hash(payload.otpCode, 12)
+    : undefined;
 
   const user = await userRepository.create({
     username: payload.username,
+    phoneNumber,
+    loginMethod,
     password: hashedPassword,
+    otpCode: hashedOtpCode,
+    otpExpiresAt: payload.otpExpiresAt,
     role: payload.role || ROLES.USER,
   });
 
   return {
     id: user._id,
     username: user.username,
+    phoneNumber: user.phoneNumber,
+    loginMethod: user.loginMethod,
     role: user.role,
     isActive: user.isActive,
   };
@@ -43,7 +58,27 @@ const getUserById = async (id) => {
 };
 
 const updateUser = async (id, payload) => {
-  const allowedData = pick(payload, ["username", "isActive"]);
+  const allowedData = pick(payload, [
+    "username",
+    "phoneNumber",
+    "loginMethod",
+    "password",
+    "otpCode",
+    "otpExpiresAt",
+    "isActive",
+  ]);
+
+  if (allowedData.phoneNumber) {
+    allowedData.phoneNumber = normalizeIranPhoneNumber(allowedData.phoneNumber);
+  }
+
+  if (allowedData.password) {
+    allowedData.password = await bcrypt.hash(allowedData.password, 12);
+  }
+
+  if (allowedData.otpCode) {
+    allowedData.otpCode = await bcrypt.hash(allowedData.otpCode, 12);
+  }
 
   const user = await userRepository.updateById(id, allowedData);
 

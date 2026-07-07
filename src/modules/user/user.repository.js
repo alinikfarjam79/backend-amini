@@ -12,7 +12,17 @@ const findByUsername = (username, withPassword = false) => {
     const query = User.findOne({ username });
 
     if (withPassword) {
-        query.select("+password");
+        query.select("+password +otpCode +otpExpiresAt");
+    }
+
+    return query;
+};
+
+const findByPhoneNumber = (phoneNumber, withSecrets = false) => {
+    const query = User.findOne({ phoneNumber });
+
+    if (withSecrets) {
+        query.select("+password +otpCode +otpExpiresAt");
     }
 
     return query;
@@ -41,6 +51,7 @@ module.exports = {
     create,
     findById,
     findByUsername,
+    findByPhoneNumber,
     findAll,
     updateById,
     softDeleteById,

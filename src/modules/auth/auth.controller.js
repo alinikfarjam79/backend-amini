@@ -3,8 +3,9 @@ const asyncHandler = require("../../shared/utils/asyncHandler");
 
 const login = asyncHandler(async (req, res) => {
     const result = await authService.login({
-        username: req.body.username,
+        phoneNumber: req.body.phoneNumber,
         password: req.body.password,
+        otpCode: req.body.otpCode,
         userAgent: req.headers["user-agent"],
         ip: req.ip,
     });

@@ -1,8 +1,10 @@
 const { z } = require("zod");
+const { IRAN_MOBILE_REGEX } = require("../../shared/utils/phoneNumber");
 
 const loginSchema = z.object({
-    username: z.string().min(3).max(30),
-    password: z.string().min(6),
+    phoneNumber: z.string().regex(IRAN_MOBILE_REGEX, "Phone number must be a valid Iran mobile number"),
+    password: z.string().min(6).optional(),
+    otpCode: z.string().regex(/^\d{4,6}$/, "OTP code must be 4 to 6 digits").optional(),
 });
 
 module.exports = {
