@@ -10,6 +10,15 @@ const createInitialUser = asyncHandler(async (req, res) => {
     });
 });
 
+const createUser = asyncHandler(async (req, res) => {
+    const user = await userService.createUser(req.body);
+
+    res.status(201).json({
+        success: true,
+        data: user,
+    });
+});
+
 const getUsers = asyncHandler(async (req, res) => {
     const users = await userService.getUsers();
 
@@ -47,6 +56,7 @@ const deleteUser = asyncHandler(async (req, res) => {
 });
 
 module.exports = {
+    createUser,
     createInitialUser,
     getUsers,
     getUserById,

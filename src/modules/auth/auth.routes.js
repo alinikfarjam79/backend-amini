@@ -9,9 +9,19 @@ const loginRateLimiter = require("../../shared/middlewares/loginRateLimit.middle
 
 const ROLES = require("../../shared/constants/roles");
 
-const { loginSchema } = require("./auth.validation");
+const {
+    loginSchema,
+    loginMethodSchema,
+} = require("./auth.validation");
 
 const router = express.Router();
+
+router.post(
+    "/login-method",
+    loginRateLimiter,
+    validate(loginMethodSchema),
+    authController.getLoginMethod
+);
 
 router.post(
     "/login",

@@ -7,7 +7,7 @@ const ROLES = require("../../shared/constants/roles");
 const LOGIN_METHODS = require("../../shared/constants/loginMethods");
 const { normalizeIranPhoneNumber } = require("../../shared/utils/phoneNumber");
 
-const createInitialUser = async (payload) => {
+const createUser = async (payload) => {
   const phoneNumber = normalizeIranPhoneNumber(payload.phoneNumber);
   const existingUser = await userRepository.findByPhoneNumber(phoneNumber);
 
@@ -24,7 +24,7 @@ const createInitialUser = async (payload) => {
     : undefined;
 
   const user = await userRepository.create({
-    username: payload.username,
+    username: payload.username || phoneNumber,
     phoneNumber,
     loginMethod,
     password: hashedPassword,
@@ -41,6 +41,16 @@ const createInitialUser = async (payload) => {
     role: user.role,
     isActive: user.isActive,
   };
+};
+
+const createInitialUser = async (payload) => {
+  const usersCount = await userRepository.count();
+
+  if (usersCount > 0) {
+    throw new AppError("Initial user already exists", 403);
+  }
+
+  return createUser(payload);
 };
 
 const getUsers = async () => {
@@ -100,6 +110,7 @@ const deleteUser = async (id) => {
 };
 
 module.exports = {
+  createUser,
   createInitialUser,
   getUsers,
   getUserById,

@@ -4,6 +4,10 @@ const create = (payload) => {
     return User.create(payload);
 };
 
+const count = () => {
+    return User.countDocuments();
+};
+
 const findById = (id) => {
     return User.findById(id);
 };
@@ -49,6 +53,7 @@ const softDeleteById = (id) => {
 
 module.exports = {
     create,
+    count,
     findById,
     findByUsername,
     findByPhoneNumber,

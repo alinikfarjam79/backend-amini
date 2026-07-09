@@ -91,6 +91,23 @@ const login = async ({ phoneNumber, password, otpCode, userAgent, ip }) => {
     };
 };
 
+const getLoginMethod = async (phoneNumber) => {
+    const normalizedPhoneNumber = normalizeIranPhoneNumber(phoneNumber);
+    const user = await userRepository.findByPhoneNumber(normalizedPhoneNumber);
+
+    if (!user || !user.isActive) {
+        return {
+            exists: false,
+            loginMethod: null,
+        };
+    }
+
+    return {
+        exists: true,
+        loginMethod: user.loginMethod,
+    };
+};
+
 const logout = async (sessionId) => {
     await sessionService.revokeSession(sessionId);
     return true;
@@ -103,6 +120,7 @@ const logoutUserFromAllDevices = async (userId) => {
 
 module.exports = {
     login,
+    getLoginMethod,
     logout,
     logoutUserFromAllDevices,
 };

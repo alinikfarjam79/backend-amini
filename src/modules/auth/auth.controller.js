@@ -16,6 +16,15 @@ const login = asyncHandler(async (req, res) => {
     });
 });
 
+const getLoginMethod = asyncHandler(async (req, res) => {
+    const result = await authService.getLoginMethod(req.body.phoneNumber);
+
+    res.status(200).json({
+        success: true,
+        data: result,
+    });
+});
+
 const logout = asyncHandler(async (req, res) => {
     await authService.logout(req.session._id);
 
@@ -36,6 +45,7 @@ const logoutUserFromAllDevices = asyncHandler(async (req, res) => {
 
 module.exports = {
     login,
+    getLoginMethod,
     logout,
     logoutUserFromAllDevices,
 };

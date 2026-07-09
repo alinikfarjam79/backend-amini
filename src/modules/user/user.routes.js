@@ -21,12 +21,20 @@ router.post(
 
 router.use(protect);
 
+router.post(
+    "/",
+    allowRoles(ROLES.ADMIN),
+    validate(createUserSchema),
+    userController.createUser
+);
+
 router.get("/", allowRoles(ROLES.ADMIN), userController.getUsers);
 
-router.get("/:id", userController.getUserById);
+router.get("/:id", allowRoles(ROLES.ADMIN), userController.getUserById);
 
 router.patch(
     "/:id",
+    allowRoles(ROLES.ADMIN),
     validate(updateUserSchema),
     userController.updateUser
 );
