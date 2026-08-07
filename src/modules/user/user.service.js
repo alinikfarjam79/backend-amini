@@ -7,13 +7,39 @@ const ROLES = require("../../shared/constants/roles");
 const LOGIN_METHODS = require("../../shared/constants/loginMethods");
 const { normalizeIranPhoneNumber } = require("../../shared/utils/phoneNumber");
 
+const normalizeUsername = (username) => {
+  if (typeof username !== "string") {
+    return username;
+  }
+
+  return username.trim().toLowerCase();
+};
+
+const ensureUsernameAvailable = async (username, currentUserId = null) => {
+  if (!username) {
+    return;
+  }
+
+  const existingUser = await userRepository.findByUsername(username);
+
+  if (
+    existingUser &&
+    (!currentUserId || existingUser._id.toString() !== currentUserId.toString())
+  ) {
+    throw new AppError("Username already exists", 409);
+  }
+};
+
 const createUser = async (payload) => {
   const phoneNumber = normalizeIranPhoneNumber(payload.phoneNumber);
+  const username = normalizeUsername(payload.username) || phoneNumber;
   const existingUser = await userRepository.findByPhoneNumber(phoneNumber);
 
   if (existingUser) {
     throw new AppError("Phone number already exists", 409);
   }
+
+  await ensureUsernameAvailable(username);
 
   const loginMethod = payload.loginMethod || LOGIN_METHODS.PASSWORD;
   const hashedPassword = payload.password
@@ -24,7 +50,7 @@ const createUser = async (payload) => {
     : undefined;
 
   const user = await userRepository.create({
-    username: payload.username || phoneNumber,
+    username,
     phoneNumber,
     loginMethod,
     password: hashedPassword,
@@ -80,6 +106,11 @@ const updateUser = async (id, payload) => {
 
   if (allowedData.phoneNumber) {
     allowedData.phoneNumber = normalizeIranPhoneNumber(allowedData.phoneNumber);
+  }
+
+  if (allowedData.username) {
+    allowedData.username = normalizeUsername(allowedData.username);
+    await ensureUsernameAvailable(allowedData.username, id);
   }
 
   if (allowedData.password) {
