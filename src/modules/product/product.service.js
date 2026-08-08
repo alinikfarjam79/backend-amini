@@ -245,9 +245,6 @@ const parseQuantityRows = (worksheet) => {
 };
 
 const getProducts = async (query = {}) => {
-  const page = Math.max(Number(query.page) || 1, 1);
-  const limit = Math.min(Math.max(Number(query.limit) || 20, 1), 100);
-  const skip = (page - 1) * limit;
   const filter = {};
   const search = normalizeText(query.search);
 
@@ -259,20 +256,7 @@ const getProducts = async (query = {}) => {
     ];
   }
 
-  const [products, total] = await Promise.all([
-    productRepository.findAll({ filter, skip, limit }),
-    productRepository.count(filter),
-  ]);
-
-  return {
-    products,
-    pagination: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
-    },
-  };
+  return productRepository.findAll(filter);
 };
 
 const uploadProductExcel = async (file) => {

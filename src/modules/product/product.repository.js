@@ -1,14 +1,7 @@
 const Product = require("./product.model");
 
-const findAll = ({ filter = {}, skip = 0, limit = 20 } = {}) => {
-  return Product.find(filter)
-    .sort({ createdAt: -1 })
-    .skip(skip)
-    .limit(limit);
-};
-
-const count = (filter = {}) => {
-  return Product.countDocuments(filter);
+const findAll = (filter = {}) => {
+  return Product.find(filter).sort({ createdAt: -1 });
 };
 
 const findByProductCodes = (productCodes) => {
@@ -48,7 +41,6 @@ const bulkUpdateQuantities = ({ quantityByProductCode, missingQuantity = 0 }) =>
 
 module.exports = {
   findAll,
-  count,
   findByProductCodes,
   bulkUpsert,
   bulkUpdateQuantities,
