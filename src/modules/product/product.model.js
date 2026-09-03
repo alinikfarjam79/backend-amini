@@ -34,6 +34,16 @@ const productSchema = new mongoose.Schema(
       default: 0,
       min: [0, "Quantity must be greater than or equal to 0"],
     },
+
+    warehouses: {
+      type: [
+        {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "Warehouse",
+        },
+      ],
+      default: [],
+    },
   },
   { timestamps: true }
 );

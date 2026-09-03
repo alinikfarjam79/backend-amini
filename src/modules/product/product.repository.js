@@ -1,11 +1,15 @@
 const Product = require("./product.model");
 
 const findAll = (filter = {}) => {
-  return Product.find(filter).sort({ createdAt: -1 });
+  return Product.find(filter)
+    .sort({ createdAt: -1 })
+    .populate({ path: "warehouses", select: "-items" });
 };
 
 const findByProductCodes = (productCodes) => {
-  return Product.find({ productCode: { $in: productCodes } }).select("productCode");
+  return Product.find({ productCode: { $in: productCodes } }).select(
+    "productCode title"
+  );
 };
 
 const bulkUpsert = (products) => {
@@ -39,9 +43,33 @@ const bulkUpdateQuantities = ({ quantityByProductCode, missingQuantity = 0 }) =>
   return Product.bulkWrite(operations, { ordered: false });
 };
 
+const bulkUpdateWarehouseInventory = ({ inventorySummaries }) => {
+  if (!Array.isArray(inventorySummaries) || inventorySummaries.length === 0) {
+    return {
+      matchedCount: 0,
+      modifiedCount: 0,
+    };
+  }
+
+  const operations = inventorySummaries.map((item) => ({
+    updateOne: {
+      filter: { productCode: item.productCode },
+      update: {
+        $set: {
+          quantity: item.quantity,
+          warehouses: item.warehouses,
+        },
+      },
+    },
+  }));
+
+  return Product.bulkWrite(operations, { ordered: false });
+};
+
 module.exports = {
   findAll,
   findByProductCodes,
   bulkUpsert,
   bulkUpdateQuantities,
+  bulkUpdateWarehouseInventory,
 };

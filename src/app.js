@@ -11,13 +11,35 @@ const apiRateLimiter = require("./shared/middlewares/apiRateLimit.middleware");
 const notFoundMiddleware = require("./shared/middlewares/notFound.middleware");
 const errorMiddleware = require("./shared/middlewares/error.middleware");
 
+const allowedOrigins = [
+  "capacitor://localhost",
+  "http://localhost",
+  "https://localhost",
+  "http://localhost:3000",
+  "https://localhost:3000",
+  "https://127.0.0.1:3000"
+];
+
 const app = express();
 
 app.use(helmet());
 
+
+
 app.use(
   cors({
-    origin: true,
+    origin: (origin, callback) => {
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Not allowed by CORS"));
+    },
+
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true,
