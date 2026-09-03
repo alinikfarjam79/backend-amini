@@ -4,12 +4,17 @@ const create = (payload) => {
   return Warehouse.create(payload);
 };
 
+const populateItemProduct = {
+  path: "items.product",
+  select: "barcode originalPrice",
+};
+
 const findAll = (filter = {}) => {
-  return Warehouse.find(filter).sort({ createdAt: -1 }).populate("items.product");
+  return Warehouse.find(filter).sort({ createdAt: -1 }).populate(populateItemProduct);
 };
 
 const findById = (id) => {
-  return Warehouse.findById(id).populate("items.product");
+  return Warehouse.findById(id).populate(populateItemProduct);
 };
 
 const findByName = (name) => {
@@ -80,7 +85,7 @@ const replaceItemsByProductCodes = (warehouseId, incomingItems) => {
       await Warehouse.bulkWrite(updateOperations, { ordered: false });
     }
 
-    return Warehouse.findById(warehouseId).populate("items.product");
+    return Warehouse.findById(warehouseId).populate(populateItemProduct);
   });
 };
 

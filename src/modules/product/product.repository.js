@@ -59,6 +59,9 @@ const bulkUpdateWarehouseInventory = ({ inventorySummaries }) => {
           quantity: item.quantity,
           warehouses: item.warehouses,
         },
+        $unset: {
+          warehouse: "",
+        },
       },
     },
   }));
