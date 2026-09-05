@@ -108,6 +108,21 @@ const getInventorySummariesByProductCodes = (productCodes) => {
         warehouses: 1,
       },
     },
+    {
+      $lookup: {
+        from: "warehouses",
+        localField: "warehouses",
+        foreignField: "_id",
+        as: "warehouses",
+        pipeline: [
+          {
+            $project: {
+              items: 0,
+            },
+          },
+        ],
+      },
+    },
   ]);
 };
 

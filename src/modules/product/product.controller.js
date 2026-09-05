@@ -20,18 +20,7 @@ const uploadProductExcel = asyncHandler(async (req, res) => {
   });
 });
 
-const uploadProductQuantityExcel = asyncHandler(async (req, res) => {
-  const result = await productService.uploadProductQuantityExcel(req.file);
-
-  res.status(200).json({
-    success: true,
-    message: "Product Quantity Excel uploaded successfully",
-    data: result,
-  });
-});
-
 module.exports = {
   getProducts,
   uploadProductExcel,
-  uploadProductQuantityExcel,
 };

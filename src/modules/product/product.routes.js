@@ -18,13 +18,6 @@ const uploadExcelMiddlewares = [
   productController.uploadProductExcel,
 ];
 
-const uploadQuantityExcelMiddlewares = [
-  allowRoles(ROLES.ADMIN),
-  uploadProductExcel,
-  productController.uploadProductQuantityExcel,
-];
-
-router.post("/upload-quantity-excel", uploadQuantityExcelMiddlewares);
 router.post("/upload-excel", uploadExcelMiddlewares);
 router.post("/upload", uploadExcelMiddlewares);
 
