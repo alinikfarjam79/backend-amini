@@ -55,16 +55,28 @@ const parseQuantity = (value) => {
   const normalized = normalizeNumberText(value);
 
   if (!normalized) {
-    return null;
+    return {
+      isValid: false,
+      value: null,
+      isZeroOrNegative: false,
+    };
   }
 
   const quantity = Number(normalized);
 
-  if (!Number.isInteger(quantity) || quantity < 0) {
-    return null;
+  if (!Number.isInteger(quantity)) {
+    return {
+      isValid: false,
+      value: null,
+      isZeroOrNegative: false,
+    };
   }
 
-  return quantity;
+  return {
+    isValid: true,
+    value: quantity,
+    isZeroOrNegative: quantity <= 0,
+  };
 };
 
 const getHeaderMap = (headers, columnsConfig) => {
@@ -117,44 +129,73 @@ const parseWarehouseProductRows = (worksheet) => {
   }
 
   const errors = [];
+  const zeroOrNegativeQuantityProducts = [];
   const productRowsByCode = new Map();
 
   rows.forEach((row, index) => {
     const rowNumber = index + 2;
     const productCode = normalizeText(row[headerMap.productCode]);
     const title = normalizeText(row[headerMap.title]);
-    const quantity = parseQuantity(row[headerMap.quantity]);
+    const quantityResult = parseQuantity(row[headerMap.quantity]);
+    const rowErrors = [];
 
     if (!productCode) {
-      errors.push(`Row ${rowNumber}: product code is required`);
+      rowErrors.push("product code is required");
     }
 
     if (!title) {
-      errors.push(`Row ${rowNumber}: title is required`);
+      rowErrors.push("title is required");
     }
 
-    if (quantity === null) {
-      errors.push(`Row ${rowNumber}: quantity must be a valid whole number`);
+    if (!quantityResult.isValid) {
+      rowErrors.push("quantity must be a valid whole number");
     }
 
-    if (productCode && title && quantity !== null) {
+    if (rowErrors.length > 0) {
+      errors.push({
+        row: rowNumber,
+        productCode: productCode || null,
+        title: title || null,
+        message: rowErrors.join("; "),
+      });
+
+      return;
+    }
+
+    if (quantityResult.isZeroOrNegative) {
+      zeroOrNegativeQuantityProducts.push({
+        row: rowNumber,
+        productCode,
+        title,
+        quantity: quantityResult.value,
+      });
+    }
+
+    if (productCode && title && quantityResult.isValid) {
       productRowsByCode.set(productCode, {
         productCode,
         title,
-        quantity,
+        quantity: quantityResult.value,
       });
     }
   });
 
-  if (errors.length > 0) {
-    throw new AppError(errors.join("; "), 400);
-  }
-
   if (productRowsByCode.size === 0) {
-    throw new AppError("Warehouse product Excel does not contain valid rows", 400);
+    const error = new AppError(
+      "Warehouse product Excel does not contain valid rows",
+      400
+    );
+    error.errors = errors;
+    error.zeroOrNegativeQuantityProducts = zeroOrNegativeQuantityProducts;
+    throw error;
   }
 
-  return Array.from(productRowsByCode.values());
+  return {
+    rows: Array.from(productRowsByCode.values()),
+    errors,
+    zeroOrNegativeQuantityProducts,
+    totalRows: rows.length,
+  };
 };
 
 const createWarehouse = async (payload) => {
@@ -210,7 +251,12 @@ const uploadWarehouseProductsExcel = async ({ warehouseId, file }) => {
     throw new AppError("Warehouse product Excel does not contain any sheets", 400);
   }
 
-  const parsedRows = parseWarehouseProductRows(workbook.Sheets[firstSheetName]);
+  const {
+    rows: parsedRows,
+    errors,
+    zeroOrNegativeQuantityProducts,
+    totalRows,
+  } = parseWarehouseProductRows(workbook.Sheets[firstSheetName]);
   const productCodes = parsedRows.map((row) => row.productCode);
   const products = await productRepository.findByProductCodes(productCodes);
   const productByCode = new Map(
@@ -248,10 +294,14 @@ const uploadWarehouseProductsExcel = async ({ warehouseId, file }) => {
   });
 
   return {
-    totalRows: parsedRows.length,
+    totalRows,
+    validRows: parsedRows.length,
+    invalidRows: errors.length,
     matched: items.length,
     unmatched: unmatchedCodes.length,
     unmatchedCodes,
+    zeroOrNegativeQuantityProducts,
+    errors,
     productsUpdated: productUpdateResult.modifiedCount || 0,
     warehouse,
   };

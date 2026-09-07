@@ -76,16 +76,36 @@ const parseOriginalPrice = (value) => {
   const normalized = normalizeNumberText(value);
 
   if (!normalized) {
-    return null;
+    return {
+      isValid: false,
+      value: null,
+      wasForcedToZero: false,
+    };
   }
 
   const price = Number(normalized);
 
-  if (!Number.isFinite(price) || price < 0) {
-    return null;
+  if (!Number.isFinite(price)) {
+    return {
+      isValid: false,
+      value: null,
+      wasForcedToZero: false,
+    };
   }
 
-  return price;
+  if (price <= 0) {
+    return {
+      isValid: true,
+      value: 0,
+      wasForcedToZero: true,
+    };
+  }
+
+  return {
+    isValid: true,
+    value: price,
+    wasForcedToZero: false,
+  };
 };
 
 const getRows = (worksheet, fileLabel) => {
@@ -114,6 +134,7 @@ const parseProductRows = (worksheet) => {
   }
 
   const errors = [];
+  const zeroPriceProducts = [];
   const products = [];
 
   rows.forEach((row, index) => {
@@ -121,41 +142,64 @@ const parseProductRows = (worksheet) => {
     const productCode = normalizeText(row[headerMap.productCode]);
     const title = normalizeText(row[headerMap.title]);
     const barcode = normalizeText(row[headerMap.barcode]) || undefined;
-    const originalPrice = parseOriginalPrice(row[headerMap.originalPrice]);
+    const priceResult = parseOriginalPrice(row[headerMap.originalPrice]);
+    const rowErrors = [];
 
     if (!productCode) {
-      errors.push(`Row ${rowNumber}: ${REQUIRED_COLUMNS.productCode} is required`);
+      rowErrors.push(`${REQUIRED_COLUMNS.productCode} is required`);
     }
 
     if (!title) {
-      errors.push(`Row ${rowNumber}: ${REQUIRED_COLUMNS.title} is required`);
+      rowErrors.push(`${REQUIRED_COLUMNS.title} is required`);
     }
 
-    if (originalPrice === null) {
-      errors.push(
-        `Row ${rowNumber}: ${REQUIRED_COLUMNS.originalPrice} must be a valid number`
-      );
+    if (!priceResult.isValid) {
+      rowErrors.push(`${REQUIRED_COLUMNS.originalPrice} must be a valid number`);
     }
 
-    if (productCode && title && originalPrice !== null) {
+    if (rowErrors.length > 0) {
+      errors.push({
+        row: rowNumber,
+        productCode: productCode || null,
+        title: title || null,
+        message: rowErrors.join("; "),
+      });
+
+      return;
+    }
+
+    if (priceResult.wasForcedToZero) {
+      zeroPriceProducts.push({
+        row: rowNumber,
+        productCode,
+        title,
+        originalPrice: 0,
+      });
+    }
+
+    if (productCode && title && priceResult.isValid) {
       products.push({
         productCode,
         title,
         barcode,
-        originalPrice,
+        originalPrice: priceResult.value,
       });
     }
   });
 
-  if (errors.length > 0) {
-    throw new AppError(errors.join("; "), 400);
-  }
-
   if (products.length === 0) {
-    throw new AppError("Product Excel does not contain valid products", 400);
+    const error = new AppError("Product Excel does not contain valid products", 400);
+    error.errors = errors;
+    error.zeroPriceProducts = zeroPriceProducts;
+    throw error;
   }
 
-  return products;
+  return {
+    products,
+    errors,
+    zeroPriceProducts,
+    totalRows: rows.length,
+  };
 };
 
 const getProducts = async (query = {}) => {
@@ -203,14 +247,20 @@ const uploadProductExcel = async (file) => {
     throw new AppError("Product Excel does not contain any sheets", 400);
   }
 
-  const products = parseProductRows(workbook.Sheets[firstSheetName]);
+  const { products, errors, zeroPriceProducts, totalRows } = parseProductRows(
+    workbook.Sheets[firstSheetName]
+  );
   const result = await productRepository.bulkUpsert(products);
 
   return {
-    totalRows: products.length,
+    totalRows,
+    validRows: products.length,
+    invalidRows: errors.length,
     inserted: result.upsertedCount || 0,
     updated: result.modifiedCount || 0,
     matched: result.matchedCount || 0,
+    zeroPriceProducts,
+    errors,
   };
 };
 

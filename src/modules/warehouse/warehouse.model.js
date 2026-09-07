@@ -23,7 +23,6 @@ const warehouseItemSchema = new mongoose.Schema(
     quantity: {
       type: Number,
       required: true,
-      min: [0, "Quantity must be greater than or equal to 0"],
     },
   },
   { _id: false, timestamps: true }

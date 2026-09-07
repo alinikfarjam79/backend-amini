@@ -8,6 +8,18 @@ const errorMiddleware = (err, req, res, next) => {
         message: err.message || "Internal Server Error",
     };
 
+    if (err.errors) {
+        response.errors = err.errors;
+    }
+
+    if (err.zeroPriceProducts) {
+        response.zeroPriceProducts = err.zeroPriceProducts;
+    }
+
+    if (err.zeroOrNegativeQuantityProducts) {
+        response.zeroOrNegativeQuantityProducts = err.zeroOrNegativeQuantityProducts;
+    }
+
     if (env.nodeEnv === "development") {
         response.stack = err.stack;
     }

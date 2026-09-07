@@ -15,7 +15,10 @@ const uploadProductExcel = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: "Product Excel uploaded successfully",
+    message:
+      result.invalidRows > 0
+        ? "Product Excel uploaded with row errors"
+        : "Product Excel uploaded successfully",
     data: result,
   });
 });
