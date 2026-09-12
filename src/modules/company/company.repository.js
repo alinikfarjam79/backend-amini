@@ -30,6 +30,14 @@ const addFilesById = (id, files) => {
   );
 };
 
+const removeFileById = (companyId, fileId) => {
+  return Company.findByIdAndUpdate(
+    companyId,
+    { $pull: { files: { _id: fileId } } },
+    { new: true }
+  );
+};
+
 module.exports = {
   create,
   findAll,
@@ -37,4 +45,5 @@ module.exports = {
   findByCode,
   findByName,
   addFilesById,
+  removeFileById,
 };

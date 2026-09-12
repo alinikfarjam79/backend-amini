@@ -15,6 +15,14 @@ const productSchema = new mongoose.Schema(
       trim: true,
     },
 
+    alias: {
+      type: String,
+      trim: true,
+      default: function () {
+        return this.title;
+      },
+    },
+
     barcode: {
       type: String,
       unique: true,
@@ -47,5 +55,13 @@ const productSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+productSchema.pre("save", function (next) {
+  if (!this.alias) {
+    this.alias = this.title;
+  }
+
+  next();
+});
 
 module.exports = mongoose.model("Product", productSchema);

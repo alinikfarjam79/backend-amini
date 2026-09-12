@@ -18,5 +18,9 @@ router.post("/:companyId/files", uploadCompanyFile, companyController.uploadComp
 router.use(allowRoles(ROLES.ADMIN));
 router.post("/", validate(createCompanySchema), companyController.createCompany);
 router.get("/", companyController.getCompanies);
+router.delete(
+  "/:companyId/files/:fileId",
+  companyController.deleteCompanyFile
+);
 
 module.exports = router;

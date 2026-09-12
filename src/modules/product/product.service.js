@@ -1,4 +1,5 @@
 const XLSX = require("xlsx");
+const mongoose = require("mongoose");
 
 const productRepository = require("./product.repository");
 const warehouseRepository = require("../warehouse/warehouse.repository");
@@ -210,6 +211,7 @@ const getProducts = async (query = {}) => {
     filter.$or = [
       { productCode: { $regex: search, $options: "i" } },
       { title: { $regex: search, $options: "i" } },
+      { alias: { $regex: search, $options: "i" } },
       { barcode: { $regex: search, $options: "i" } },
     ];
   }
@@ -229,10 +231,15 @@ const getProducts = async (query = {}) => {
 
     return {
       ...productObject,
+      alias: productObject.alias || productObject.title,
       quantity: inventory?.quantity || 0,
       warehouses: inventory?.warehouses || [],
     };
   });
+};
+
+const ensureProductAliases = async () => {
+  return productRepository.ensureAliases();
 };
 
 const uploadProductExcel = async (file) => {
@@ -264,7 +271,29 @@ const uploadProductExcel = async (file) => {
   };
 };
 
+const updateProductAlias = async (productId, payload) => {
+  if (!mongoose.Types.ObjectId.isValid(productId)) {
+    throw new AppError("Invalid product id", 400);
+  }
+
+  const alias = normalizeText(payload.alias);
+
+  if (!alias) {
+    throw new AppError("Product alias is required", 400);
+  }
+
+  const product = await productRepository.updateAliasById(productId, alias);
+
+  if (!product) {
+    throw new AppError("Product not found", 404);
+  }
+
+  return product;
+};
+
 module.exports = {
+  ensureProductAliases,
   getProducts,
+  updateProductAlias,
   uploadProductExcel,
 };

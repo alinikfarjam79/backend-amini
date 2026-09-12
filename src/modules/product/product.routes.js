@@ -5,12 +5,20 @@ const uploadProductExcel = require("./product.upload");
 const protect = require("../../shared/middlewares/auth.middleware");
 const allowRoles = require("../../shared/middlewares/permission.middleware");
 const ROLES = require("../../shared/constants/roles");
+const validate = require("../../shared/middlewares/validate.middleware");
+const { updateProductAliasSchema } = require("./product.validation");
 
 const router = express.Router();
 
 router.use(protect);
 
 router.get("/", productController.getProducts);
+router.patch(
+  "/:productId/alias",
+  allowRoles(ROLES.ADMIN),
+  validate(updateProductAliasSchema),
+  productController.updateProductAlias
+);
 
 const uploadExcelMiddlewares = [
   allowRoles(ROLES.ADMIN),

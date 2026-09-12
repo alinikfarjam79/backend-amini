@@ -150,6 +150,49 @@ const saveCompanyFile = async (file) => {
   };
 };
 
+const removeFileFromDisk = async (filePath) => {
+  if (!filePath) {
+    return;
+  }
+
+  const resolvedUploadDirectory = path.resolve(uploadDirectory);
+  const resolvedFilePath = path.resolve(filePath);
+  const relativePath = path.relative(resolvedUploadDirectory, resolvedFilePath);
+
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    return;
+  }
+
+  await fs.rm(resolvedFilePath, { force: true });
+};
+
+const deleteCompanyFile = async ({ companyId, fileId }) => {
+  if (!mongoose.Types.ObjectId.isValid(companyId)) {
+    throw new AppError("Invalid company id", 400);
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(fileId)) {
+    throw new AppError("Invalid file id", 400);
+  }
+
+  const company = await companyRepository.findById(companyId);
+
+  if (!company) {
+    throw new AppError("Company not found", 404);
+  }
+
+  const file = company.files.id(fileId);
+
+  if (!file) {
+    throw new AppError("Company file not found", 404);
+  }
+
+  await companyRepository.removeFileById(companyId, fileId);
+  await removeFileFromDisk(file.filePath);
+
+  return true;
+};
+
 const uploadCompanyFiles = async ({
   companyId,
   companyName,
@@ -229,6 +272,7 @@ const uploadCompanyFiles = async ({
 
 module.exports = {
   createCompany,
+  deleteCompanyFile,
   getCompanies,
   uploadCompanyFiles,
 };
