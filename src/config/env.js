@@ -8,6 +8,9 @@ const env = {
 
     clientUrl: process.env.CLIENT_URL || "http://localhost:3000",
 
+    trustProxy: process.env.TRUST_PROXY || "false",
+    pdfRendererPath: process.env.PDF_RENDERER_PATH || "pdftoppm",
+
     jwtSecret: process.env.JWT_SECRET,
     jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
 

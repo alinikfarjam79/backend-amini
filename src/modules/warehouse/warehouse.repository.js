@@ -89,10 +89,10 @@ const replaceItemsByProductCodes = (warehouseId, incomingItems) => {
   });
 };
 
-const getInventorySummariesByProductCodes = (productCodes) => {
-  return Warehouse.aggregate([
+const getInventorySummaryPipeline = (matchStage) => {
+  return [
     { $unwind: "$items" },
-    { $match: { "items.productCode": { $in: productCodes } } },
+    ...(matchStage ? [matchStage] : []),
     {
       $group: {
         _id: "$items.productCode",
@@ -123,7 +123,23 @@ const getInventorySummariesByProductCodes = (productCodes) => {
         ],
       },
     },
-  ]);
+  ];
+};
+
+const getInventorySummaries = () => {
+  return Warehouse.aggregate(getInventorySummaryPipeline()).allowDiskUse(true);
+};
+
+const getInventorySummariesByProductCodes = (productCodes) => {
+  if (!Array.isArray(productCodes) || productCodes.length === 0) {
+    return [];
+  }
+
+  return Warehouse.aggregate(
+    getInventorySummaryPipeline({
+      $match: { "items.productCode": { $in: productCodes } },
+    })
+  ).allowDiskUse(true);
 };
 
 module.exports = {
@@ -132,6 +148,7 @@ module.exports = {
   findById,
   findByName,
   bulkCreateDefaults,
+  getInventorySummaries,
   getInventorySummariesByProductCodes,
   replaceItemsByProductCodes,
 };

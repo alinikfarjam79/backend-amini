@@ -2,7 +2,6 @@ const XLSX = require("xlsx");
 const mongoose = require("mongoose");
 
 const productRepository = require("./product.repository");
-const warehouseRepository = require("../warehouse/warehouse.repository");
 const AppError = require("../../shared/utils/AppError");
 
 const REQUIRED_COLUMNS = {
@@ -136,6 +135,7 @@ const parseProductRows = (worksheet) => {
 
   const errors = [];
   const zeroPriceProducts = [];
+  const invalidPriceProductRows = [];
   const products = [];
 
   rows.forEach((row, index) => {
@@ -154,16 +154,25 @@ const parseProductRows = (worksheet) => {
       rowErrors.push(`${REQUIRED_COLUMNS.title} is required`);
     }
 
-    if (!priceResult.isValid) {
-      rowErrors.push(`${REQUIRED_COLUMNS.originalPrice} must be a valid number`);
-    }
-
     if (rowErrors.length > 0) {
       errors.push({
         row: rowNumber,
         productCode: productCode || null,
         title: title || null,
         message: rowErrors.join("; "),
+      });
+
+      return;
+    }
+
+    if (!priceResult.isValid) {
+      invalidPriceProductRows.push({
+        row: rowNumber,
+        productCode,
+        title,
+        barcode,
+        originalPrice: 0,
+        reason: `${REQUIRED_COLUMNS.originalPrice} must be a valid number`,
       });
 
       return;
@@ -188,17 +197,11 @@ const parseProductRows = (worksheet) => {
     }
   });
 
-  if (products.length === 0) {
-    const error = new AppError("Product Excel does not contain valid products", 400);
-    error.errors = errors;
-    error.zeroPriceProducts = zeroPriceProducts;
-    throw error;
-  }
-
   return {
     products,
     errors,
     zeroPriceProducts,
+    invalidPriceProductRows,
     totalRows: rows.length,
   };
 };
@@ -217,23 +220,15 @@ const getProducts = async (query = {}) => {
   }
 
   const products = await productRepository.findAll(filter);
-  const productCodes = products.map((product) => product.productCode);
-  const inventorySummaries =
-    await warehouseRepository.getInventorySummariesByProductCodes(productCodes);
-  const inventoryByProductCode = new Map(
-    inventorySummaries.map((summary) => [summary.productCode, summary])
-  );
 
   return products.map((product) => {
-    const productObject =
-      typeof product.toObject === "function" ? product.toObject() : product;
-    const inventory = inventoryByProductCode.get(productObject.productCode);
+    const productObject = product;
 
     return {
       ...productObject,
       alias: productObject.alias || productObject.title,
-      quantity: inventory?.quantity || 0,
-      warehouses: inventory?.warehouses || [],
+      quantity: productObject.quantity || 0,
+      warehouses: productObject.warehouses || [],
     };
   });
 };
@@ -254,10 +249,50 @@ const uploadProductExcel = async (file) => {
     throw new AppError("Product Excel does not contain any sheets", 400);
   }
 
-  const { products, errors, zeroPriceProducts, totalRows } = parseProductRows(
-    workbook.Sheets[firstSheetName]
-  );
+  const {
+    products,
+    errors,
+    zeroPriceProducts,
+    invalidPriceProductRows,
+    totalRows,
+  } = parseProductRows(workbook.Sheets[firstSheetName]);
   const result = await productRepository.bulkUpsert(products);
+  const invalidPriceProductCodes = invalidPriceProductRows.map(
+    (product) => product.productCode
+  );
+  const existingInvalidPriceProducts =
+    invalidPriceProductCodes.length > 0
+      ? await productRepository.findByProductCodes(invalidPriceProductCodes)
+      : [];
+  const existingInvalidPriceProductCodes = new Set(
+    existingInvalidPriceProducts.map((product) => product.productCode)
+  );
+  const zeroPriceProductRowsToCreate = Array.from(
+    new Map(
+      invalidPriceProductRows
+        .filter(
+          (product) => !existingInvalidPriceProductCodes.has(product.productCode)
+        )
+        .map((product) => [product.productCode, product])
+    ).values()
+  );
+
+  await productRepository.bulkCreateMissingWithZeroPrice(
+    zeroPriceProductRowsToCreate
+  );
+  const zeroPriceProductsWithInvalidPrices = [
+    ...zeroPriceProducts,
+    ...invalidPriceProductRows.map((product) => ({
+      row: product.row,
+      productCode: product.productCode,
+      title: product.title,
+      originalPrice: 0,
+      reason: product.reason,
+      action: existingInvalidPriceProductCodes.has(product.productCode)
+        ? "skipped_existing_product"
+        : "created_with_zero_price",
+    })),
+  ];
 
   return {
     totalRows,
@@ -266,7 +301,7 @@ const uploadProductExcel = async (file) => {
     inserted: result.upsertedCount || 0,
     updated: result.modifiedCount || 0,
     matched: result.matchedCount || 0,
-    zeroPriceProducts,
+    zeroPriceProducts: zeroPriceProductsWithInvalidPrices,
     errors,
   };
 };

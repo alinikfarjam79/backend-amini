@@ -35,6 +35,24 @@ const companyFileSchema = new mongoose.Schema(
       default: null,
     },
 
+    sourceType: {
+      type: String,
+      enum: ["file", "pdf-page"],
+      default: "file",
+    },
+
+    pageNumber: {
+      type: Number,
+      min: 1,
+      default: undefined,
+    },
+
+    sourceOriginalName: {
+      type: String,
+      trim: true,
+      default: undefined,
+    },
+
     size: {
       type: Number,
       required: true,

@@ -1,7 +1,13 @@
 const Product = require("./product.model");
 
 const findAll = (filter = {}) => {
-  return Product.find(filter).sort({ createdAt: -1 });
+  return Product.find(filter)
+    .sort({ createdAt: -1 })
+    .populate({
+      path: "warehouses",
+      select: "-items",
+    })
+    .lean();
 };
 
 const findById = (id) => {
@@ -45,6 +51,14 @@ const ensureAliases = async () => {
 };
 
 const bulkUpsert = (products) => {
+  if (!Array.isArray(products) || products.length === 0) {
+    return {
+      upsertedCount: 0,
+      modifiedCount: 0,
+      matchedCount: 0,
+    };
+  }
+
   const operations = products.map((product) => ({
     updateOne: {
       filter: { productCode: product.productCode },
@@ -57,6 +71,41 @@ const bulkUpsert = (products) => {
       upsert: true,
     },
   }));
+
+  return Product.bulkWrite(operations, { ordered: false });
+};
+
+const bulkCreateMissingWithZeroPrice = (products) => {
+  if (!Array.isArray(products) || products.length === 0) {
+    return {
+      upsertedCount: 0,
+      modifiedCount: 0,
+      matchedCount: 0,
+    };
+  }
+
+  const operations = products.map((product) => {
+    const productOnInsert = {
+      productCode: product.productCode,
+      title: product.title,
+      alias: product.title,
+      originalPrice: 0,
+    };
+
+    if (product.barcode) {
+      productOnInsert.barcode = product.barcode;
+    }
+
+    return {
+      updateOne: {
+        filter: { productCode: product.productCode },
+        update: {
+          $setOnInsert: productOnInsert,
+        },
+        upsert: true,
+      },
+    };
+  });
 
   return Product.bulkWrite(operations, { ordered: false });
 };
@@ -101,6 +150,7 @@ module.exports = {
   findByProductCodes,
   ensureAliases,
   bulkUpsert,
+  bulkCreateMissingWithZeroPrice,
   bulkUpdateWarehouseInventory,
   updateAliasById,
 };

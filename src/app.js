@@ -22,9 +22,15 @@ const allowedOrigins = [
 
 const app = express();
 
+if (env.trustProxy !== "false") {
+  const trustProxyValue = Number.isNaN(Number(env.trustProxy))
+    ? env.trustProxy
+    : Number(env.trustProxy);
+
+  app.set("trust proxy", env.trustProxy === "true" ? true : trustProxyValue);
+}
+
 app.use(helmet());
-
-
 
 app.use(
   cors({

@@ -55,4 +55,6 @@ const warehouseSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+warehouseSchema.index({ "items.productCode": 1 });
+
 module.exports = mongoose.model("Warehouse", warehouseSchema);

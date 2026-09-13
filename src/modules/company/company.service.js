@@ -1,13 +1,17 @@
 const crypto = require("crypto");
+const { execFile } = require("child_process");
 const fs = require("fs/promises");
 const mongoose = require("mongoose");
 const path = require("path");
+const { promisify } = require("util");
 
 const companyRepository = require("./company.repository");
+const env = require("../../config/env");
 const AppError = require("../../shared/utils/AppError");
 
 const uploadDirectory = path.join(__dirname, "..", "..", "..", "uploads", "company-files");
 const publicUploadPath = "/uploads/company-files";
+const execFileAsync = promisify(execFile);
 
 const normalizeSearch = (value) => {
   if (typeof value !== "string") {
@@ -150,6 +154,118 @@ const saveCompanyFile = async (file) => {
   };
 };
 
+const isPdfFile = (file) => {
+  const extension = path.extname(file.originalname || "").toLowerCase();
+
+  return file.mimetype === "application/pdf" || extension === ".pdf";
+};
+
+const getPdfPageNumber = (fileName, outputBaseName) => {
+  const match = fileName.match(
+    new RegExp(`^${outputBaseName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}-(\\d+)\\.png$`)
+  );
+
+  return match ? Number(match[1]) : 0;
+};
+
+const convertPdfToImages = async (file) => {
+  await fs.mkdir(uploadDirectory, { recursive: true });
+
+  const pdfFileName = `${crypto.randomUUID()}.pdf`;
+  const outputBaseName = `${crypto.randomUUID()}-page`;
+  const pdfPath = path.join(uploadDirectory, pdfFileName);
+  const outputPrefix = path.join(uploadDirectory, outputBaseName);
+  const generatedFiles = [];
+
+  try {
+    await fs.writeFile(pdfPath, file.buffer);
+
+    await execFileAsync(
+      env.pdfRendererPath,
+      ["-png", "-r", "150", pdfPath, outputPrefix],
+      {
+        timeout: 120000,
+      }
+    );
+
+    const uploadedFiles = await fs.readdir(uploadDirectory);
+    const pageFileNames = uploadedFiles
+      .filter((fileName) => fileName.startsWith(`${outputBaseName}-`))
+      .filter((fileName) => fileName.toLowerCase().endsWith(".png"))
+      .sort(
+        (first, second) =>
+          getPdfPageNumber(first, outputBaseName) -
+          getPdfPageNumber(second, outputBaseName)
+      );
+
+    if (pageFileNames.length === 0) {
+      throw new AppError("PDF does not contain renderable pages", 400);
+    }
+
+    for (const pageFileName of pageFileNames) {
+      const pageNumber = getPdfPageNumber(pageFileName, outputBaseName);
+      const pagePath = path.join(uploadDirectory, pageFileName);
+      const pageStats = await fs.stat(pagePath);
+      const originalBaseName = path.basename(
+        file.originalname || "company-file.pdf",
+        path.extname(file.originalname || "")
+      );
+
+      generatedFiles.push({
+        filePath: pagePath,
+        fileUrl: `${publicUploadPath}/${pageFileName}`,
+        originalName: `${originalBaseName}-page-${pageNumber}.png`,
+        mimeType: "image/png",
+        size: pageStats.size,
+        sourceType: "pdf-page",
+        pageNumber,
+        sourceOriginalName: file.originalname,
+      });
+    }
+
+    return generatedFiles;
+  } catch (error) {
+    await Promise.all(
+      generatedFiles.map((generatedFile) =>
+        fs.rm(generatedFile.filePath, { force: true })
+      )
+    );
+
+    if (error.code === "ENOENT") {
+      throw new AppError(
+        "امکان تبدیل PDF به عکس روی سرور فعال نیست. لطفا ابزار Poppler را روی سرور نصب کنید.",
+        503
+      );
+    }
+
+    if (error instanceof AppError) {
+      throw error;
+    }
+
+    throw new AppError("Could not convert PDF pages to images", 400);
+  } finally {
+    await fs.rm(pdfPath, { force: true });
+  }
+};
+
+const saveCompanyUpload = async (file) => {
+  if (isPdfFile(file)) {
+    return convertPdfToImages(file);
+  }
+
+  const savedFile = await saveCompanyFile(file);
+
+  return [
+    {
+      ...savedFile,
+      originalName: file.originalname,
+      mimeType: file.mimetype,
+      size: file.size,
+      sourceType: "file",
+    },
+  ];
+};
+
 const removeFileFromDisk = async (filePath) => {
   if (!filePath) {
     return;
@@ -227,14 +343,8 @@ const uploadCompanyFiles = async ({
     });
 
     for (const file of files) {
-      const savedFile = await saveCompanyFile(file);
-
-      savedFiles.push({
-        ...savedFile,
-        originalName: file.originalname,
-        mimeType: file.mimetype,
-        size: file.size,
-      });
+      const savedUploadFiles = await saveCompanyUpload(file);
+      savedFiles.push(...savedUploadFiles);
     }
 
     const fileDocuments = savedFiles.map((savedFile) => ({
@@ -244,6 +354,9 @@ const uploadCompanyFiles = async ({
       fileUrl: savedFile.fileUrl,
       originalName: savedFile.originalName,
       mimeType: savedFile.mimeType,
+      sourceType: savedFile.sourceType,
+      pageNumber: savedFile.pageNumber,
+      sourceOriginalName: savedFile.sourceOriginalName,
       size: savedFile.size,
       uploadedBy: userId,
     }));
