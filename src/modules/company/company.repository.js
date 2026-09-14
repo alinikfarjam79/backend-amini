@@ -26,7 +26,7 @@ const addFilesById = (id, files) => {
   return Company.findByIdAndUpdate(
     id,
     { $push: { files: { $each: files } } },
-    { new: true, runValidators: true }
+    { returnDocument: "after", runValidators: true }
   );
 };
 
@@ -34,7 +34,7 @@ const removeFileById = (companyId, fileId) => {
   return Company.findByIdAndUpdate(
     companyId,
     { $pull: { files: { _id: fileId } } },
-    { new: true }
+    { returnDocument: "after" }
   );
 };
 

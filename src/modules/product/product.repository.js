@@ -140,7 +140,7 @@ const updateAliasById = (id, alias) => {
   return Product.findByIdAndUpdate(
     id,
     { alias },
-    { new: true, runValidators: true }
+    { returnDocument: "after", runValidators: true }
   );
 };
 

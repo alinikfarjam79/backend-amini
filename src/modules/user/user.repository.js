@@ -38,7 +38,7 @@ const findAll = () => {
 
 const updateById = (id, payload) => {
     return User.findByIdAndUpdate(id, payload, {
-        new: true,
+        returnDocument: "after",
         runValidators: true,
     }).select("-password");
 };
@@ -47,7 +47,7 @@ const softDeleteById = (id) => {
     return User.findByIdAndUpdate(
         id,
         { isActive: false },
-        { new: true }
+        { returnDocument: "after" }
     ).select("-password");
 };
 
