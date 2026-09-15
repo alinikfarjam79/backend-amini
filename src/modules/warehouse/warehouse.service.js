@@ -58,7 +58,8 @@ const parseQuantity = (value) => {
     return {
       isValid: false,
       value: null,
-      isZeroOrNegative: false,
+      isZero: false,
+      isNegative: false,
     };
   }
 
@@ -68,14 +69,16 @@ const parseQuantity = (value) => {
     return {
       isValid: false,
       value: null,
-      isZeroOrNegative: false,
+      isZero: false,
+      isNegative: false,
     };
   }
 
   return {
     isValid: true,
     value: quantity,
-    isZeroOrNegative: quantity <= 0,
+    isZero: quantity === 0,
+    isNegative: quantity < 0,
   };
 };
 
@@ -129,9 +132,10 @@ const parseWarehouseProductRows = (worksheet) => {
   }
 
   const errors = [];
-  const zeroOrNegativeQuantityProducts = [];
+  const zeroQuantityProducts = [];
   const invalidQuantityProductRows = [];
   const productRowsByCode = new Map();
+  let validRowsCount = 0;
 
   rows.forEach((row, index) => {
     const rowNumber = index + 2;
@@ -165,14 +169,28 @@ const parseWarehouseProductRows = (worksheet) => {
         productCode,
         title,
         quantity: 0,
+        originalQuantity: normalizeText(row[headerMap.quantity]) || null,
         reason: "quantity must be a valid whole number",
       });
 
       return;
     }
 
-    if (quantityResult.isZeroOrNegative) {
-      zeroOrNegativeQuantityProducts.push({
+    if (quantityResult.isNegative) {
+      invalidQuantityProductRows.push({
+        row: rowNumber,
+        productCode,
+        title,
+        quantity: 0,
+        originalQuantity: quantityResult.value,
+        reason: "quantity must be zero or greater",
+      });
+
+      return;
+    }
+
+    if (quantityResult.isZero) {
+      zeroQuantityProducts.push({
         row: rowNumber,
         productCode,
         title,
@@ -181,6 +199,7 @@ const parseWarehouseProductRows = (worksheet) => {
     }
 
     if (productCode && title && quantityResult.isValid) {
+      validRowsCount += 1;
       productRowsByCode.set(productCode, {
         productCode,
         title,
@@ -192,8 +211,9 @@ const parseWarehouseProductRows = (worksheet) => {
   return {
     rows: Array.from(productRowsByCode.values()),
     errors,
-    zeroOrNegativeQuantityProducts,
+    zeroQuantityProducts,
     invalidQuantityProductRows,
+    validRowsCount,
     totalRows: rows.length,
   };
 };
@@ -260,11 +280,12 @@ const uploadWarehouseProductsExcel = async ({ warehouseId, file }) => {
   const {
     rows: parsedRows,
     errors,
-    zeroOrNegativeQuantityProducts,
+    zeroQuantityProducts,
     invalidQuantityProductRows,
+    validRowsCount,
     totalRows,
   } = parseWarehouseProductRows(workbook.Sheets[firstSheetName]);
-  const existingWarehouse = await warehouseRepository.findById(warehouseId);
+  const existingWarehouse = await warehouseRepository.findSummaryById(warehouseId);
 
   if (!existingWarehouse) {
     throw new AppError("Warehouse not found", 404);
@@ -338,44 +359,67 @@ const uploadWarehouseProductsExcel = async ({ warehouseId, file }) => {
       };
     })
     .concat(invalidQuantityItems);
+  const updatedProducts = items.filter((item) =>
+    existingProductCodes.has(item.productCode)
+  ).length;
 
-  const warehouse = await warehouseRepository.replaceItemsByProductCodes(
+  const warehouseUpdateResult = await warehouseRepository.replaceItemsByProductCodes(
     warehouseId,
     items
   );
 
-  const inventorySummaries = await warehouseRepository.getInventorySummariesByProductCodes(
-    items.map((item) => item.productCode)
-  );
+  if (!warehouseUpdateResult) {
+    throw new AppError("Warehouse not found", 404);
+  }
 
-  const productUpdateResult = await productRepository.bulkUpdateWarehouseInventory({
-    inventorySummaries,
-  });
+  const inventorySummaries =
+    items.length > 0
+      ? await warehouseRepository.getInventorySummariesForProductUpdate(
+          items.map((item) => item.productCode)
+        )
+      : [];
+
+  const productUpdateResult =
+    inventorySummaries.length > 0
+      ? await productRepository.bulkUpdateWarehouseInventory({
+          inventorySummaries,
+        })
+      : { modifiedCount: 0 };
+  const invalidQuantityProducts = invalidQuantityProductRows.map((row) => ({
+    row: row.row,
+    productCode: row.productCode,
+    title: row.title,
+    quantity: 0,
+    originalQuantity: row.originalQuantity,
+    reason: row.reason,
+    action: existingProductCodes.has(row.productCode)
+      ? "skipped_existing_product"
+      : "created_with_zero_quantity",
+  }));
+  const createdInvalidQuantityProducts = invalidQuantityProducts.filter(
+    (product) => product.action === "created_with_zero_quantity"
+  );
+  const skippedInvalidQuantityProducts = invalidQuantityProducts.filter(
+    (product) => product.action === "skipped_existing_product"
+  );
+  const invalidRows = invalidQuantityProducts.length + errors.length;
 
   return {
     totalRows,
-    validRows: parsedRows.length,
-    invalidRows: errors.length,
-    matched: items.length,
-    unmatched: 0,
-    unmatchedCodes: [],
-    createdMissingProducts: rowsToCreate.length,
-    zeroOrNegativeQuantityProducts: [
-      ...zeroOrNegativeQuantityProducts,
-      ...invalidQuantityProductRows.map((row) => ({
-        row: row.row,
-        productCode: row.productCode,
-        title: row.title,
-        quantity: 0,
-        reason: row.reason,
-        action: existingProductCodes.has(row.productCode)
-          ? "skipped_existing_product"
-          : "created_with_zero_quantity",
-      })),
-    ],
+    validRows: validRowsCount,
+    invalidRows,
+    zeroQuantityRows: zeroQuantityProducts.length,
+    newProducts: rowsToCreate.length,
+    updatedProducts,
+    createdInvalidQuantityRows: createdInvalidQuantityProducts.length,
+    skippedInvalidQuantityRows: skippedInvalidQuantityProducts.length,
+    errorRows: errors.length,
+    zeroQuantityProducts,
+    createdInvalidQuantityProducts,
+    skippedInvalidQuantityProducts,
     errors,
     productsUpdated: productUpdateResult.modifiedCount || 0,
-    warehouse,
+    warehouse: warehouseUpdateResult.warehouse,
   };
 };
 

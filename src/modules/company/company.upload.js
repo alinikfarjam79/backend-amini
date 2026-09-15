@@ -5,7 +5,7 @@ const AppError = require("../../shared/utils/AppError");
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 10 * 1024 * 1024,
+    fileSize: 16 * 1024 * 1024,
   },
 });
 
@@ -22,7 +22,7 @@ const uploadCompanyFile = (req, res, next) => {
     }
 
     if (error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE") {
-      return next(new AppError("Company file must be 10MB or smaller", 400));
+      return next(new AppError("Company file must be 16MB or smaller", 400));
     }
 
     next(error);

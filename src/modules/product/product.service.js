@@ -280,28 +280,42 @@ const uploadProductExcel = async (file) => {
   await productRepository.bulkCreateMissingWithZeroPrice(
     zeroPriceProductRowsToCreate
   );
-  const zeroPriceProductsWithInvalidPrices = [
-    ...zeroPriceProducts,
-    ...invalidPriceProductRows.map((product) => ({
-      row: product.row,
-      productCode: product.productCode,
-      title: product.title,
-      originalPrice: 0,
-      reason: product.reason,
-      action: existingInvalidPriceProductCodes.has(product.productCode)
-        ? "skipped_existing_product"
-        : "created_with_zero_price",
-    })),
-  ];
+  const invalidPriceProducts = invalidPriceProductRows.map((product) => ({
+    row: product.row,
+    productCode: product.productCode,
+    title: product.title,
+    originalPrice: 0,
+    reason: product.reason,
+    action: existingInvalidPriceProductCodes.has(product.productCode)
+      ? "skipped_existing_product"
+      : "created_with_zero_price",
+  }));
+  const createdInvalidPriceProducts = invalidPriceProducts.filter(
+    (product) => product.action === "created_with_zero_price"
+  );
+  const skippedInvalidPriceProducts = invalidPriceProducts.filter(
+    (product) => product.action === "skipped_existing_product"
+  );
+  const createdInvalidPriceRows = createdInvalidPriceProducts.length;
+  const skippedInvalidPriceRows = skippedInvalidPriceProducts.length;
+  const invalidRows = invalidPriceProducts.length + errors.length;
+  const zeroPriceRows = zeroPriceProducts.length;
+  const inserted = result.upsertedCount || 0;
+  const updated = result.modifiedCount || 0;
 
   return {
     totalRows,
     validRows: products.length,
-    invalidRows: errors.length,
-    inserted: result.upsertedCount || 0,
-    updated: result.modifiedCount || 0,
-    matched: result.matchedCount || 0,
-    zeroPriceProducts: zeroPriceProductsWithInvalidPrices,
+    invalidRows,
+    zeroPriceRows,
+    newProducts: inserted,
+    updatedProducts: updated,
+    createdInvalidPriceRows,
+    skippedInvalidPriceRows,
+    errorRows: errors.length,
+    zeroPriceProducts,
+    createdInvalidPriceProducts,
+    skippedInvalidPriceProducts,
     errors,
   };
 };

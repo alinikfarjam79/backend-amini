@@ -17,8 +17,10 @@ const allowedOrigins = [
   "https://localhost",
   "http://localhost:3000",
   "https://localhost:3000",
-  "https://127.0.0.1:3000"
-];
+  "https://127.0.0.1:3000",
+  env.clientUrl,
+  ...env.allowedOrigins,
+].filter(Boolean);
 
 const app = express();
 

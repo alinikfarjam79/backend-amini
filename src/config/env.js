@@ -7,6 +7,10 @@ const env = {
     mongoUri: process.env.MONGO_URI,
 
     clientUrl: process.env.CLIENT_URL || "http://localhost:3000",
+    allowedOrigins: (process.env.ALLOWED_ORIGINS || "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
 
     trustProxy: process.env.TRUST_PROXY || "false",
     pdfRendererPath: process.env.PDF_RENDERER_PATH || "pdftoppm",

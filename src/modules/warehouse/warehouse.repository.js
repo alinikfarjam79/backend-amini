@@ -17,6 +17,12 @@ const findById = (id) => {
   return Warehouse.findById(id).populate(populateItemProduct);
 };
 
+const findSummaryById = (id) => {
+  return Warehouse.findById(id)
+    .select("_id name isDefault isActive createdAt updatedAt")
+    .lean();
+};
+
 const findByName = (name) => {
   return Warehouse.findOne({ name });
 };
@@ -40,56 +46,70 @@ const bulkCreateDefaults = (names) => {
   return Warehouse.bulkWrite(operations, { ordered: false });
 };
 
-const replaceItemsByProductCodes = (warehouseId, incomingItems) => {
-  return Warehouse.findById(warehouseId).then(async (warehouse) => {
-    if (!warehouse) {
-      return null;
-    }
+const replaceItemsByProductCodes = async (warehouseId, incomingItems) => {
+  const warehouse = await Warehouse.findById(warehouseId)
+    .select("_id name isDefault isActive createdAt updatedAt items.productCode")
+    .lean();
 
-    const existingCodes = new Set(
-      warehouse.items.map((item) => item.productCode)
-    );
-    const newItems = incomingItems.filter(
-      (item) => !existingCodes.has(item.productCode)
-    );
+  if (!warehouse) {
+    return null;
+  }
 
-    const updateOperations = incomingItems
-      .filter((item) => existingCodes.has(item.productCode))
-      .map((item) => ({
-        updateOne: {
-          filter: {
-            _id: warehouseId,
-            "items.productCode": item.productCode,
-          },
-          update: {
-            $set: {
-              "items.$.product": item.product,
-              "items.$.productCode": item.productCode,
-              "items.$.title": item.title,
-              "items.$.quantity": item.quantity,
-            },
+  const existingCodes = new Set(
+    warehouse.items.map((item) => item.productCode)
+  );
+  const newItems = incomingItems.filter(
+    (item) => !existingCodes.has(item.productCode)
+  );
+
+  const updateOperations = incomingItems
+    .filter((item) => existingCodes.has(item.productCode))
+    .map((item) => ({
+      updateOne: {
+        filter: {
+          _id: warehouseId,
+          "items.productCode": item.productCode,
+        },
+        update: {
+          $set: {
+            "items.$.product": item.product,
+            "items.$.productCode": item.productCode,
+            "items.$.title": item.title,
+            "items.$.quantity": item.quantity,
           },
         },
-      }));
+      },
+    }));
 
-    if (newItems.length > 0) {
-      updateOperations.push({
-        updateOne: {
-          filter: { _id: warehouseId },
-          update: { $push: { items: { $each: newItems } } },
-        },
-      });
-    }
+  if (newItems.length > 0) {
+    updateOperations.push({
+      updateOne: {
+        filter: { _id: warehouseId },
+        update: { $push: { items: { $each: newItems } } },
+      },
+    });
+  }
 
-    if (updateOperations.length > 0) {
-      await Warehouse.bulkWrite(updateOperations, { ordered: false });
-    }
+  if (updateOperations.length > 0) {
+    await Warehouse.bulkWrite(updateOperations, { ordered: false });
+  }
 
-    return Warehouse.findById(warehouseId).populate(populateItemProduct);
-  });
+  return {
+    warehouse: {
+      _id: warehouse._id,
+      name: warehouse.name,
+      isDefault: warehouse.isDefault,
+      isActive: warehouse.isActive,
+      createdAt: warehouse.createdAt,
+      updatedAt: warehouse.updatedAt,
+      itemCount: existingCodes.size + newItems.length,
+    },
+    insertedItems: newItems.length,
+    updatedItems: incomingItems.length - newItems.length,
+  };
 };
 
-const getInventorySummaryPipeline = (matchStage) => {
+const getInventorySummaryPipeline = (matchStage, includeWarehouseLookup = true) => {
   return [
     { $unwind: "$items" },
     ...(matchStage ? [matchStage] : []),
@@ -108,21 +128,25 @@ const getInventorySummaryPipeline = (matchStage) => {
         warehouses: 1,
       },
     },
-    {
-      $lookup: {
-        from: "warehouses",
-        localField: "warehouses",
-        foreignField: "_id",
-        as: "warehouses",
-        pipeline: [
+    ...(includeWarehouseLookup
+      ? [
           {
-            $project: {
-              items: 0,
+            $lookup: {
+              from: "warehouses",
+              localField: "warehouses",
+              foreignField: "_id",
+              as: "warehouses",
+              pipeline: [
+                {
+                  $project: {
+                    items: 0,
+                  },
+                },
+              ],
             },
           },
-        ],
-      },
-    },
+        ]
+      : []),
   ];
 };
 
@@ -142,13 +166,30 @@ const getInventorySummariesByProductCodes = (productCodes) => {
   ).allowDiskUse(true);
 };
 
+const getInventorySummariesForProductUpdate = (productCodes) => {
+  if (!Array.isArray(productCodes) || productCodes.length === 0) {
+    return [];
+  }
+
+  return Warehouse.aggregate(
+    getInventorySummaryPipeline(
+      {
+        $match: { "items.productCode": { $in: productCodes } },
+      },
+      false
+    )
+  ).allowDiskUse(true);
+};
+
 module.exports = {
   create,
   findAll,
   findById,
+  findSummaryById,
   findByName,
   bulkCreateDefaults,
   getInventorySummaries,
   getInventorySummariesByProductCodes,
+  getInventorySummariesForProductUpdate,
   replaceItemsByProductCodes,
 };

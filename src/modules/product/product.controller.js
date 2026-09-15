@@ -28,8 +28,10 @@ const uploadProductExcel = asyncHandler(async (req, res) => {
   res.status(200).json({
     success: true,
     message:
-      result.invalidRows > 0
-        ? "Product Excel uploaded with row errors"
+      result.invalidRows > 0 ||
+      result.createdInvalidPriceProducts.length > 0 ||
+      result.skippedInvalidPriceProducts.length > 0
+        ? "Product Excel uploaded with row warnings"
         : "Product Excel uploaded successfully",
     data: result,
   });

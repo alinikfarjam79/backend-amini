@@ -36,7 +36,10 @@ const uploadWarehouseProductsExcel = asyncHandler(async (req, res) => {
 
   res.status(200).json({
     success: true,
-    message: "Warehouse products Excel uploaded successfully",
+    message:
+      result.invalidRows > 0
+        ? "Warehouse products Excel uploaded with row warnings"
+        : "Warehouse products Excel uploaded successfully",
     data: result,
   });
 });
