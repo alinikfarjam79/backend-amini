@@ -59,7 +59,7 @@ const parseQuantity = (value) => {
       isValid: false,
       value: null,
       isZero: false,
-      isNegative: false,
+      isZeroOrNegative: false,
     };
   }
 
@@ -70,7 +70,7 @@ const parseQuantity = (value) => {
       isValid: false,
       value: null,
       isZero: false,
-      isNegative: false,
+      isZeroOrNegative: false,
     };
   }
 
@@ -78,7 +78,7 @@ const parseQuantity = (value) => {
     isValid: true,
     value: quantity,
     isZero: quantity === 0,
-    isNegative: quantity < 0,
+    isZeroOrNegative: quantity <= 0,
   };
 };
 
@@ -132,7 +132,7 @@ const parseWarehouseProductRows = (worksheet) => {
   }
 
   const errors = [];
-  const zeroQuantityProducts = [];
+  const zeroOrNegativeQuantityProducts = [];
   const invalidQuantityProductRows = [];
   const productRowsByCode = new Map();
   let validRowsCount = 0;
@@ -176,21 +176,8 @@ const parseWarehouseProductRows = (worksheet) => {
       return;
     }
 
-    if (quantityResult.isNegative) {
-      invalidQuantityProductRows.push({
-        row: rowNumber,
-        productCode,
-        title,
-        quantity: 0,
-        originalQuantity: quantityResult.value,
-        reason: "quantity must be zero or greater",
-      });
-
-      return;
-    }
-
-    if (quantityResult.isZero) {
-      zeroQuantityProducts.push({
+    if (quantityResult.isZeroOrNegative) {
+      zeroOrNegativeQuantityProducts.push({
         row: rowNumber,
         productCode,
         title,
@@ -211,7 +198,7 @@ const parseWarehouseProductRows = (worksheet) => {
   return {
     rows: Array.from(productRowsByCode.values()),
     errors,
-    zeroQuantityProducts,
+    zeroOrNegativeQuantityProducts,
     invalidQuantityProductRows,
     validRowsCount,
     totalRows: rows.length,
@@ -280,7 +267,7 @@ const uploadWarehouseProductsExcel = async ({ warehouseId, file }) => {
   const {
     rows: parsedRows,
     errors,
-    zeroQuantityProducts,
+    zeroOrNegativeQuantityProducts,
     invalidQuantityProductRows,
     validRowsCount,
     totalRows,
@@ -408,13 +395,14 @@ const uploadWarehouseProductsExcel = async ({ warehouseId, file }) => {
     totalRows,
     validRows: validRowsCount,
     invalidRows,
-    zeroQuantityRows: zeroQuantityProducts.length,
+    zeroQuantityRows: zeroOrNegativeQuantityProducts.length,
+    zeroOrNegativeQuantityRows: zeroOrNegativeQuantityProducts.length,
     newProducts: rowsToCreate.length,
     updatedProducts,
     createdInvalidQuantityRows: createdInvalidQuantityProducts.length,
     skippedInvalidQuantityRows: skippedInvalidQuantityProducts.length,
     errorRows: errors.length,
-    zeroQuantityProducts,
+    zeroOrNegativeQuantityProducts,
     createdInvalidQuantityProducts,
     skippedInvalidQuantityProducts,
     errors,
