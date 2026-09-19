@@ -50,6 +50,84 @@ const ensureAliases = async () => {
   return Product.bulkWrite(operations, { ordered: false });
 };
 
+const ensureThresholdDefaults = async () => {
+  const updates = [
+    ["warningThreshold", 15],
+    ["criticalThreshold", 10],
+  ];
+
+  const thresholdResults = await Promise.all(
+    updates.map(([field, value]) =>
+      Product.updateMany(
+        {
+          $or: [{ [field]: { $exists: false } }, { [field]: null }],
+        },
+        { $set: { [field]: value } }
+      )
+    )
+  );
+
+  const legacyDisabledResult = await Product.updateMany(
+    {
+      $and: [
+        {
+          $or: [
+            { thresholdEnabled: { $exists: false } },
+            { thresholdEnabled: null },
+          ],
+        },
+        {
+          $or: [
+            { warningThresholdEnabled: false },
+            { criticalThresholdEnabled: false },
+          ],
+        },
+      ],
+    },
+    { $set: { thresholdEnabled: false } }
+  );
+  const enabledDefaultResult = await Product.updateMany(
+    {
+      $or: [
+        { thresholdEnabled: { $exists: false } },
+        { thresholdEnabled: null },
+      ],
+    },
+    { $set: { thresholdEnabled: true } }
+  );
+  const legacyCleanupResult = await Product.updateMany(
+    {
+      $or: [
+        { warningThresholdEnabled: { $exists: true } },
+        { criticalThresholdEnabled: { $exists: true } },
+      ],
+    },
+    {
+      $unset: {
+        warningThresholdEnabled: "",
+        criticalThresholdEnabled: "",
+      },
+    }
+  );
+  const results = [
+    ...thresholdResults,
+    legacyDisabledResult,
+    enabledDefaultResult,
+    legacyCleanupResult,
+  ];
+
+  return {
+    matchedCount: results.reduce(
+      (total, result) => total + (result.matchedCount || 0),
+      0
+    ),
+    modifiedCount: results.reduce(
+      (total, result) => total + (result.modifiedCount || 0),
+      0
+    ),
+  };
+};
+
 const bulkUpsert = (products) => {
   if (!Array.isArray(products) || products.length === 0) {
     return {
@@ -144,13 +222,27 @@ const updateAliasById = (id, alias) => {
   );
 };
 
+const updateThresholdsById = (id, thresholds) => {
+  return Product.findByIdAndUpdate(id, thresholds, {
+    returnDocument: "after",
+    runValidators: true,
+  })
+    .populate({
+      path: "warehouses",
+      select: "-items",
+    })
+    .lean();
+};
+
 module.exports = {
   findAll,
   findById,
   findByProductCodes,
   ensureAliases,
+  ensureThresholdDefaults,
   bulkUpsert,
   bulkCreateMissingWithZeroPrice,
   bulkUpdateWarehouseInventory,
   updateAliasById,
+  updateThresholdsById,
 };

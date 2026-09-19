@@ -22,6 +22,18 @@ const updateProductAlias = asyncHandler(async (req, res) => {
   });
 });
 
+const updateProductThresholds = asyncHandler(async (req, res) => {
+  const product = await productService.updateProductThresholds(
+    req.params.productId,
+    req.body
+  );
+
+  res.status(200).json({
+    success: true,
+    data: product,
+  });
+});
+
 const uploadProductExcel = asyncHandler(async (req, res) => {
   const result = await productService.uploadProductExcel(req.file);
 
@@ -40,5 +52,6 @@ const uploadProductExcel = asyncHandler(async (req, res) => {
 module.exports = {
   getProducts,
   updateProductAlias,
+  updateProductThresholds,
   uploadProductExcel,
 };

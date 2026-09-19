@@ -43,6 +43,23 @@ const productSchema = new mongoose.Schema(
       min: [0, "Quantity must be greater than or equal to 0"],
     },
 
+    warningThreshold: {
+      type: Number,
+      default: 15,
+      min: [0, "Warning threshold must be greater than or equal to 0"],
+    },
+
+    criticalThreshold: {
+      type: Number,
+      default: 10,
+      min: [0, "Critical threshold must be greater than or equal to 0"],
+    },
+
+    thresholdEnabled: {
+      type: Boolean,
+      default: true,
+    },
+
     warehouses: {
       type: [
         {

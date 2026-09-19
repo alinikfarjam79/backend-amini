@@ -6,7 +6,10 @@ const protect = require("../../shared/middlewares/auth.middleware");
 const allowRoles = require("../../shared/middlewares/permission.middleware");
 const ROLES = require("../../shared/constants/roles");
 const validate = require("../../shared/middlewares/validate.middleware");
-const { updateProductAliasSchema } = require("./product.validation");
+const {
+  updateProductAliasSchema,
+  updateProductThresholdsSchema,
+} = require("./product.validation");
 
 const router = express.Router();
 
@@ -18,6 +21,12 @@ router.patch(
   allowRoles(ROLES.ADMIN),
   validate(updateProductAliasSchema),
   productController.updateProductAlias
+);
+router.patch(
+  "/:productId/thresholds",
+  allowRoles(ROLES.ADMIN),
+  validate(updateProductThresholdsSchema),
+  productController.updateProductThresholds
 );
 
 const uploadExcelMiddlewares = [

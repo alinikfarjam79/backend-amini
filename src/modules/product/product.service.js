@@ -206,35 +206,169 @@ const parseProductRows = (worksheet) => {
   };
 };
 
+const getThresholdExpressions = () => {
+  const quantity = { $ifNull: ["$quantity", 0] };
+  const criticalThreshold = { $ifNull: ["$criticalThreshold", 10] };
+  const warningThreshold = { $ifNull: ["$warningThreshold", 15] };
+  const thresholdEnabled = { $ifNull: ["$thresholdEnabled", true] };
+  const enabled = { $eq: [thresholdEnabled, true] };
+
+  return {
+    thresholdEnabled,
+    critical: {
+      $and: [enabled, { $lte: [quantity, criticalThreshold] }],
+    },
+    warning: {
+      $and: [
+        enabled,
+        { $gt: [quantity, criticalThreshold] },
+        { $lt: [quantity, warningThreshold] },
+      ],
+    },
+    normal: {
+      $or: [
+        { $eq: [thresholdEnabled, false] },
+        {
+          $and: [enabled, { $gte: [quantity, warningThreshold] }],
+        },
+      ],
+    },
+  };
+};
+
 const getProducts = async (query = {}) => {
-  const filter = {};
+  const conditions = [];
   const search = normalizeText(query.search);
 
   if (search) {
-    filter.$or = [
-      { productCode: { $regex: search, $options: "i" } },
-      { title: { $regex: search, $options: "i" } },
-      { alias: { $regex: search, $options: "i" } },
-      { barcode: { $regex: search, $options: "i" } },
-    ];
+    conditions.push({
+      $or: [
+        { productCode: { $regex: search, $options: "i" } },
+        { title: { $regex: search, $options: "i" } },
+        { alias: { $regex: search, $options: "i" } },
+        { barcode: { $regex: search, $options: "i" } },
+      ],
+    });
   }
+
+  const thresholdExpressions = getThresholdExpressions();
+  const requestedStatuses = normalizeText(query.inventoryStatus)
+    .toLowerCase()
+    .split(",")
+    .map((status) => status.trim())
+    .filter(Boolean);
+  const allowedStatuses = new Set(["critical", "warning", "normal"]);
+
+  if (requestedStatuses.some((status) => !allowedStatuses.has(status))) {
+    throw new AppError(
+      "inventoryStatus must be critical, warning, normal, or a comma-separated combination",
+      400
+    );
+  }
+
+  if (requestedStatuses.length > 0) {
+    const uniqueStatuses = [...new Set(requestedStatuses)];
+    const statusExpressions = uniqueStatuses.map(
+      (status) => thresholdExpressions[status]
+    );
+
+    conditions.push({
+      $expr:
+        statusExpressions.length === 1
+          ? statusExpressions[0]
+          : { $or: statusExpressions },
+    });
+  }
+
+  const thresholdEnabledQuery = normalizeText(query.thresholdEnabled).toLowerCase();
+
+  if (
+    thresholdEnabledQuery &&
+    !["true", "false"].includes(thresholdEnabledQuery)
+  ) {
+    throw new AppError("thresholdEnabled must be true or false", 400);
+  }
+
+  if (thresholdEnabledQuery) {
+    conditions.push({
+      $expr: {
+        $eq: [
+          thresholdExpressions.thresholdEnabled,
+          thresholdEnabledQuery === "true",
+        ],
+      },
+    });
+  }
+
+  const filter = conditions.length > 0 ? { $and: conditions } : {};
 
   const products = await productRepository.findAll(filter);
 
-  return products.map((product) => {
-    const productObject = product;
+  return products.map(formatProduct);
+};
 
-    return {
-      ...productObject,
-      alias: productObject.alias || productObject.title,
-      quantity: productObject.quantity || 0,
-      warehouses: productObject.warehouses || [],
-    };
-  });
+const getInventoryStatus = (product) => {
+  const quantity = Number.isFinite(product.quantity) ? product.quantity : 0;
+  const criticalThreshold = Number.isFinite(product.criticalThreshold)
+    ? product.criticalThreshold
+    : 10;
+  const warningThreshold = Number.isFinite(product.warningThreshold)
+    ? product.warningThreshold
+    : 15;
+  const thresholdEnabled =
+    typeof product.thresholdEnabled === "boolean"
+      ? product.thresholdEnabled
+      : product.warningThresholdEnabled !== false &&
+        product.criticalThresholdEnabled !== false;
+
+  if (!thresholdEnabled) {
+    return "normal";
+  }
+
+  if (quantity <= criticalThreshold) {
+    return "critical";
+  }
+
+  if (quantity < warningThreshold) {
+    return "warning";
+  }
+
+  return "normal";
+};
+
+const formatProduct = (product) => {
+  const productObject =
+    typeof product.toObject === "function" ? product.toObject() : product;
+  const {
+    warningThresholdEnabled,
+    criticalThresholdEnabled,
+    ...cleanProduct
+  } = productObject;
+  const thresholdEnabled =
+    typeof productObject.thresholdEnabled === "boolean"
+      ? productObject.thresholdEnabled
+      : warningThresholdEnabled !== false && criticalThresholdEnabled !== false;
+
+  return {
+    ...cleanProduct,
+    alias: productObject.alias || productObject.title,
+    quantity: Number.isFinite(productObject.quantity)
+      ? productObject.quantity
+      : 0,
+    warningThreshold: productObject.warningThreshold ?? 15,
+    criticalThreshold: productObject.criticalThreshold ?? 10,
+    thresholdEnabled,
+    inventoryStatus: getInventoryStatus(productObject),
+    warehouses: productObject.warehouses || [],
+  };
 };
 
 const ensureProductAliases = async () => {
   return productRepository.ensureAliases();
+};
+
+const ensureProductThresholds = async () => {
+  return productRepository.ensureThresholdDefaults();
 };
 
 const uploadProductExcel = async (file) => {
@@ -340,9 +474,42 @@ const updateProductAlias = async (productId, payload) => {
   return product;
 };
 
+const updateProductThresholds = async (productId, payload) => {
+  if (!mongoose.Types.ObjectId.isValid(productId)) {
+    throw new AppError("Invalid product id", 400);
+  }
+
+  const existingProduct = await productRepository.findById(productId);
+
+  if (!existingProduct) {
+    throw new AppError("Product not found", 404);
+  }
+
+  const warningThreshold =
+    payload.warningThreshold ?? existingProduct.warningThreshold ?? 15;
+  const criticalThreshold =
+    payload.criticalThreshold ?? existingProduct.criticalThreshold ?? 10;
+
+  if (criticalThreshold > warningThreshold) {
+    throw new AppError(
+      "Critical threshold cannot be greater than warning threshold",
+      400
+    );
+  }
+
+  const product = await productRepository.updateThresholdsById(
+    productId,
+    payload
+  );
+
+  return formatProduct(product);
+};
+
 module.exports = {
   ensureProductAliases,
+  ensureProductThresholds,
   getProducts,
   updateProductAlias,
+  updateProductThresholds,
   uploadProductExcel,
 };
