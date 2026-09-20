@@ -420,6 +420,34 @@ const deleteCompanyFile = async ({ companyId, fileId }) => {
   return true;
 };
 
+const updateCompanyFileTitle = async ({ companyId, fileId, title }) => {
+  if (!mongoose.Types.ObjectId.isValid(companyId)) {
+    throw new AppError("Invalid company id", 400);
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(fileId)) {
+    throw new AppError("Invalid file id", 400);
+  }
+
+  const normalizedTitle = normalizeSearch(title);
+
+  if (!normalizedTitle) {
+    throw new AppError("File title is required", 400);
+  }
+
+  const company = await companyRepository.updateFileTitleById(
+    companyId,
+    fileId,
+    normalizedTitle
+  );
+
+  if (!company) {
+    throw new AppError("Company file not found", 404);
+  }
+
+  return company.files.id(fileId);
+};
+
 const uploadCompanyFiles = async ({
   companyId,
   companyName,
@@ -498,5 +526,6 @@ module.exports = {
   createCompany,
   deleteCompanyFile,
   getCompanies,
+  updateCompanyFileTitle,
   uploadCompanyFiles,
 };

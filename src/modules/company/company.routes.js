@@ -6,7 +6,10 @@ const validate = require("../../shared/middlewares/validate.middleware");
 const protect = require("../../shared/middlewares/auth.middleware");
 const allowRoles = require("../../shared/middlewares/permission.middleware");
 const ROLES = require("../../shared/constants/roles");
-const { createCompanySchema } = require("./company.validation");
+const {
+  createCompanySchema,
+  updateCompanyFileTitleSchema,
+} = require("./company.validation");
 
 const router = express.Router();
 
@@ -24,6 +27,11 @@ router.post("/:companyId/files", uploadCompanyFileMiddlewares);
 router.use(allowRoles(ROLES.ADMIN));
 router.post("/", validate(createCompanySchema), companyController.createCompany);
 router.get("/", companyController.getCompanies);
+router.patch(
+  "/:companyId/files/:fileId/title",
+  validate(updateCompanyFileTitleSchema),
+  companyController.updateCompanyFileTitle
+);
 router.delete(
   "/:companyId/files/:fileId",
   companyController.deleteCompanyFile

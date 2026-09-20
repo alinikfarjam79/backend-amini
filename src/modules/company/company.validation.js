@@ -6,6 +6,11 @@ const createCompanySchema = z.object({
   isActive: z.boolean().optional(),
 });
 
+const updateCompanyFileTitleSchema = z.object({
+  title: z.string().trim().min(1, "File title is required").max(200),
+});
+
 module.exports = {
   createCompanySchema,
+  updateCompanyFileTitleSchema,
 };

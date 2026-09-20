@@ -38,6 +38,14 @@ const removeFileById = (companyId, fileId) => {
   );
 };
 
+const updateFileTitleById = (companyId, fileId, title) => {
+  return Company.findOneAndUpdate(
+    { _id: companyId, "files._id": fileId },
+    { $set: { "files.$.title": title } },
+    { returnDocument: "after", runValidators: true }
+  );
+};
+
 module.exports = {
   create,
   findAll,
@@ -46,4 +54,5 @@ module.exports = {
   findByName,
   addFilesById,
   removeFileById,
+  updateFileTitleById,
 };

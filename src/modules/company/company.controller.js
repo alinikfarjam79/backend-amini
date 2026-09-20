@@ -55,6 +55,20 @@ const deleteCompanyFile = asyncHandler(async (req, res) => {
   });
 });
 
+const updateCompanyFileTitle = asyncHandler(async (req, res) => {
+  const file = await companyService.updateCompanyFileTitle({
+    companyId: req.params.companyId,
+    fileId: req.params.fileId,
+    title: req.body.title,
+  });
+
+  res.status(200).json({
+    success: true,
+    message: "Company file title updated successfully",
+    data: file,
+  });
+});
+
 const uploadCompanyFile = asyncHandler(async (req, res) => {
   const result = await companyService.uploadCompanyFiles({
     companyId: req.params.companyId,
@@ -89,5 +103,6 @@ module.exports = {
   createCompany,
   deleteCompanyFile,
   getCompanies,
+  updateCompanyFileTitle,
   uploadCompanyFile,
 };
