@@ -37,7 +37,7 @@ const companyFileSchema = new mongoose.Schema(
 
     sourceType: {
       type: String,
-      enum: ["file", "pdf-page"],
+      enum: ["file", "pdf-page", "pdf-combined"],
       default: "file",
     },
 

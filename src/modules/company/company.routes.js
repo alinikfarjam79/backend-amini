@@ -12,8 +12,14 @@ const router = express.Router();
 
 router.use(protect);
 
-router.post("/files", uploadCompanyFile, companyController.uploadCompanyFile);
-router.post("/:companyId/files", uploadCompanyFile, companyController.uploadCompanyFile);
+const uploadCompanyFileMiddlewares = [
+  allowRoles(ROLES.ADMIN),
+  uploadCompanyFile,
+  companyController.uploadCompanyFile,
+];
+
+router.post("/files", uploadCompanyFileMiddlewares);
+router.post("/:companyId/files", uploadCompanyFileMiddlewares);
 
 router.use(allowRoles(ROLES.ADMIN));
 router.post("/", validate(createCompanySchema), companyController.createCompany);
