@@ -9,6 +9,7 @@ const validate = require("../../shared/middlewares/validate.middleware");
 const {
   updateProductAliasSchema,
   updateProductThresholdsSchema,
+  updateProductEnableSchema,
 } = require("./product.validation");
 
 const router = express.Router();
@@ -27,6 +28,12 @@ router.patch(
   allowRoles(ROLES.ADMIN),
   validate(updateProductThresholdsSchema),
   productController.updateProductThresholds
+);
+router.patch(
+  "/:productId/enable",
+  allowRoles(ROLES.ADMIN),
+  validate(updateProductEnableSchema),
+  productController.updateProductEnable
 );
 
 const uploadExcelMiddlewares = [

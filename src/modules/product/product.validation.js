@@ -14,7 +14,12 @@ const updateProductThresholdsSchema = z
     message: "At least one threshold field is required",
   });
 
+const updateProductEnableSchema = z.object({
+  enable: z.boolean(),
+});
+
 module.exports = {
   updateProductAliasSchema,
   updateProductThresholdsSchema,
+  updateProductEnableSchema,
 };

@@ -88,6 +88,7 @@ const uploadCompanyFile = asyncHandler(async (req, res) => {
       "publish_date",
       "\u062a\u0627\u0631\u06cc\u062e",
     ]),
+    includePdfPages: getBodyValue(req.body, ["includePdfPages"]),
     files: req.filesList,
     userId: req.user._id,
   });

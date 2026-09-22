@@ -272,7 +272,7 @@ const createCombinedPdfImage = async ({
   }
 };
 
-const convertPdfToImages = async (file) => {
+const convertPdfToImages = async (file, includePdfPages) => {
   await fs.mkdir(uploadDirectory, { recursive: true });
 
   const pdfFileName = `${crypto.randomUUID()}.pdf`;
@@ -306,25 +306,27 @@ const convertPdfToImages = async (file) => {
       throw new AppError("PDF does not contain renderable pages", 400);
     }
 
-    for (const pageFileName of pageFileNames) {
-      const pageNumber = getPdfPageNumber(pageFileName, outputBaseName);
-      const pagePath = path.join(uploadDirectory, pageFileName);
-      const pageStats = await fs.stat(pagePath);
-      const originalBaseName = path.basename(
-        file.originalname || "company-file.pdf",
-        path.extname(file.originalname || "")
-      );
+    if (includePdfPages) {
+      for (const pageFileName of pageFileNames) {
+        const pageNumber = getPdfPageNumber(pageFileName, outputBaseName);
+        const pagePath = path.join(uploadDirectory, pageFileName);
+        const pageStats = await fs.stat(pagePath);
+        const originalBaseName = path.basename(
+          file.originalname || "company-file.pdf",
+          path.extname(file.originalname || "")
+        );
 
-      generatedFiles.push({
-        filePath: pagePath,
-        fileUrl: `${publicUploadPath}/${pageFileName}`,
-        originalName: `${originalBaseName}-page-${pageNumber}.png`,
-        mimeType: "image/png",
-        size: pageStats.size,
-        sourceType: "pdf-page",
-        pageNumber,
-        sourceOriginalName: file.originalname,
-      });
+        generatedFiles.push({
+          filePath: pagePath,
+          fileUrl: `${publicUploadPath}/${pageFileName}`,
+          originalName: `${originalBaseName}-page-${pageNumber}.png`,
+          mimeType: "image/png",
+          size: pageStats.size,
+          sourceType: "pdf-page",
+          pageNumber,
+          sourceOriginalName: file.originalname,
+        });
+      }
     }
 
     const combinedImage = await createCombinedPdfImage({
@@ -334,12 +336,23 @@ const convertPdfToImages = async (file) => {
     });
     generatedFiles.push(combinedImage);
 
+    if (!includePdfPages) {
+      await Promise.all(
+        pageFileNames.map((pageFileName) =>
+          fs.rm(path.join(uploadDirectory, pageFileName), { force: true })
+        )
+      );
+    }
+
     return generatedFiles;
   } catch (error) {
+    const uploadedFiles = await fs.readdir(uploadDirectory);
     await Promise.all(
-      generatedFiles.map((generatedFile) =>
-        fs.rm(generatedFile.filePath, { force: true })
-      )
+      uploadedFiles
+        .filter((fileName) => fileName.startsWith(`${outputBaseName}-`))
+        .map((fileName) =>
+          fs.rm(path.join(uploadDirectory, fileName), { force: true })
+        )
     );
 
     if (error.code === "ENOENT") {
@@ -359,9 +372,9 @@ const convertPdfToImages = async (file) => {
   }
 };
 
-const saveCompanyUpload = async (file) => {
+const saveCompanyUpload = async (file, includePdfPages) => {
   if (isPdfFile(file)) {
-    return convertPdfToImages(file);
+    return convertPdfToImages(file, includePdfPages);
   }
 
   const savedFile = await saveCompanyFile(file);
@@ -454,11 +467,27 @@ const uploadCompanyFiles = async ({
   companyCode,
   title,
   publishDate,
+  includePdfPages,
   files,
   userId,
 }) => {
   const normalizedTitle = normalizeSearch(title);
   const publishedAt = normalizePublishDate(publishDate);
+
+  if (
+    includePdfPages !== undefined &&
+    includePdfPages !== true &&
+    includePdfPages !== false &&
+    includePdfPages !== "true" &&
+    includePdfPages !== "false"
+  ) {
+    throw new AppError("includePdfPages must be true or false", 400);
+  }
+
+  const parsedIncludePdfPages =
+    includePdfPages === undefined ||
+    includePdfPages === true ||
+    includePdfPages === "true";
 
   if (!normalizedTitle) {
     throw new AppError("File title is required", 400);
@@ -482,7 +511,10 @@ const uploadCompanyFiles = async ({
     });
 
     for (const file of files) {
-      const savedUploadFiles = await saveCompanyUpload(file);
+      const savedUploadFiles = await saveCompanyUpload(
+        file,
+        parsedIncludePdfPages
+      );
       savedFiles.push(...savedUploadFiles);
     }
 

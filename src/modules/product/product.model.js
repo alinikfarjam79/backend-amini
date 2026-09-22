@@ -60,6 +60,11 @@ const productSchema = new mongoose.Schema(
       default: true,
     },
 
+    enable: {
+      type: Boolean,
+      default: true,
+    },
+
     warehouses: {
       type: [
         {

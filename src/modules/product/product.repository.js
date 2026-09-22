@@ -16,12 +16,20 @@ const findById = (id) => {
 
 const findByProductCodes = (productCodes) => {
   return Product.find({ productCode: { $in: productCodes } }).select(
-    "productCode title"
+    "productCode title enable"
+  );
+};
+
+const ensureEnableDefaults = () => {
+  return Product.updateMany(
+    { enable: { $exists: false } },
+    { $set: { enable: true } }
   );
 };
 
 const ensureAliases = async () => {
   const products = await Product.find({
+      enable: { $ne: false },
       $or: [
         { alias: { $exists: false } },
         { alias: null },
@@ -60,6 +68,7 @@ const ensureThresholdDefaults = async () => {
     updates.map(([field, value]) =>
       Product.updateMany(
         {
+          enable: { $ne: false },
           $or: [{ [field]: { $exists: false } }, { [field]: null }],
         },
         { $set: { [field]: value } }
@@ -69,6 +78,7 @@ const ensureThresholdDefaults = async () => {
 
   const legacyDisabledResult = await Product.updateMany(
     {
+      enable: { $ne: false },
       $and: [
         {
           $or: [
@@ -88,6 +98,7 @@ const ensureThresholdDefaults = async () => {
   );
   const enabledDefaultResult = await Product.updateMany(
     {
+      enable: { $ne: false },
       $or: [
         { thresholdEnabled: { $exists: false } },
         { thresholdEnabled: null },
@@ -97,6 +108,7 @@ const ensureThresholdDefaults = async () => {
   );
   const legacyCleanupResult = await Product.updateMany(
     {
+      enable: { $ne: false },
       $or: [
         { warningThresholdEnabled: { $exists: true } },
         { criticalThresholdEnabled: { $exists: true } },
@@ -128,7 +140,7 @@ const ensureThresholdDefaults = async () => {
   };
 };
 
-const bulkUpsert = (products) => {
+const bulkUpsert = (products, existingProductCodes = new Set()) => {
   if (!Array.isArray(products) || products.length === 0) {
     return {
       upsertedCount: 0,
@@ -139,14 +151,16 @@ const bulkUpsert = (products) => {
 
   const operations = products.map((product) => ({
     updateOne: {
-      filter: { productCode: product.productCode },
+      filter: existingProductCodes.has(product.productCode)
+        ? { productCode: product.productCode, enable: { $ne: false } }
+        : { productCode: product.productCode },
       update: {
         $set: product,
         $setOnInsert: {
           alias: product.title,
         },
       },
-      upsert: true,
+      upsert: !existingProductCodes.has(product.productCode),
     },
   }));
 
@@ -198,7 +212,7 @@ const bulkUpdateWarehouseInventory = ({ inventorySummaries }) => {
 
   const operations = inventorySummaries.map((item) => ({
     updateOne: {
-      filter: { productCode: item.productCode },
+      filter: { productCode: item.productCode, enable: { $ne: false } },
       update: {
         $set: {
           quantity: item.quantity,
@@ -215,18 +229,22 @@ const bulkUpdateWarehouseInventory = ({ inventorySummaries }) => {
 };
 
 const updateAliasById = (id, alias) => {
-  return Product.findByIdAndUpdate(
-    id,
+  return Product.findOneAndUpdate(
+    { _id: id, enable: { $ne: false } },
     { alias },
     { returnDocument: "after", runValidators: true }
   );
 };
 
 const updateThresholdsById = (id, thresholds) => {
-  return Product.findByIdAndUpdate(id, thresholds, {
-    returnDocument: "after",
-    runValidators: true,
-  })
+  return Product.findOneAndUpdate(
+    { _id: id, enable: { $ne: false } },
+    thresholds,
+    {
+      returnDocument: "after",
+      runValidators: true,
+    }
+  )
     .populate({
       path: "warehouses",
       select: "-items",
@@ -234,10 +252,21 @@ const updateThresholdsById = (id, thresholds) => {
     .lean();
 };
 
+const updateEnableById = (id, enable) => {
+  return Product.findOneAndUpdate(
+    enable ? { _id: id } : { _id: id, enable: { $ne: false } },
+    { enable },
+    { returnDocument: "after", runValidators: true }
+  )
+    .populate({ path: "warehouses", select: "-items" })
+    .lean();
+};
+
 module.exports = {
   findAll,
   findById,
   findByProductCodes,
+  ensureEnableDefaults,
   ensureAliases,
   ensureThresholdDefaults,
   bulkUpsert,
@@ -245,4 +274,5 @@ module.exports = {
   bulkUpdateWarehouseInventory,
   updateAliasById,
   updateThresholdsById,
+  updateEnableById,
 };

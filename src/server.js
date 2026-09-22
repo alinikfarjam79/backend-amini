@@ -4,12 +4,14 @@ const connectDB = require("./config/db");
 const {
     ensureProductAliases,
     ensureProductThresholds,
+    ensureProductEnableDefaults,
 } = require("./modules/product/product.service");
 const { ensureDefaultWarehouses } = require("./modules/warehouse/warehouse.seed");
 
 const startServer = async () => {
     await connectDB();
     await ensureDefaultWarehouses();
+    await ensureProductEnableDefaults();
     await ensureProductAliases();
     await ensureProductThresholds();
 

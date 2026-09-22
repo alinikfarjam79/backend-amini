@@ -3,6 +3,7 @@ const mongoose = require("mongoose");
 
 const productRepository = require("./product.repository");
 const AppError = require("../../shared/utils/AppError");
+const ROLES = require("../../shared/constants/roles");
 
 const REQUIRED_COLUMNS = {
   productCode: "\u0643\u062f \u0643\u0627\u0644\u0627",
@@ -189,6 +190,7 @@ const parseProductRows = (worksheet) => {
 
     if (productCode && title && priceResult.isValid) {
       products.push({
+        row: rowNumber,
         productCode,
         title,
         barcode,
@@ -236,8 +238,20 @@ const getThresholdExpressions = () => {
   };
 };
 
-const getProducts = async (query = {}) => {
-  const conditions = [];
+const getProducts = async (query = {}, role) => {
+  const enableQuery = normalizeText(query.enable).toLowerCase();
+
+  if (enableQuery && !["true", "false"].includes(enableQuery)) {
+    throw new AppError("enable must be true or false", 400);
+  }
+
+  if (enableQuery === "false" && role !== ROLES.ADMIN) {
+    throw new AppError("Forbidden", 403);
+  }
+
+  const conditions = [
+    { enable: enableQuery === "false" ? false : { $ne: false } },
+  ];
   const search = normalizeText(query.search);
 
   if (search) {
@@ -267,6 +281,7 @@ const getProducts = async (query = {}) => {
   }
 
   if (requestedStatuses.length > 0) {
+    conditions.push({ enable: { $ne: false } });
     const uniqueStatuses = [...new Set(requestedStatuses)];
     const statusExpressions = uniqueStatuses.map(
       (status) => thresholdExpressions[status]
@@ -358,6 +373,7 @@ const formatProduct = (product) => {
     warningThreshold: productObject.warningThreshold ?? 15,
     criticalThreshold: productObject.criticalThreshold ?? 10,
     thresholdEnabled,
+    enable: productObject.enable !== false,
     inventoryStatus: getInventoryStatus(productObject),
     warehouses: productObject.warehouses || [],
   };
@@ -369,6 +385,10 @@ const ensureProductAliases = async () => {
 
 const ensureProductThresholds = async () => {
   return productRepository.ensureThresholdDefaults();
+};
+
+const ensureProductEnableDefaults = async () => {
+  return productRepository.ensureEnableDefaults();
 };
 
 const uploadProductExcel = async (file) => {
@@ -390,8 +410,39 @@ const uploadProductExcel = async (file) => {
     invalidPriceProductRows,
     totalRows,
   } = parseProductRows(workbook.Sheets[firstSheetName]);
-  const result = await productRepository.bulkUpsert(products);
-  const invalidPriceProductCodes = invalidPriceProductRows.map(
+  const productCodes = [...new Set([
+    ...products.map((product) => product.productCode),
+    ...invalidPriceProductRows.map((product) => product.productCode),
+  ])];
+  const existingProducts = await productRepository.findByProductCodes(productCodes);
+  const disabledCodes = new Set(
+    existingProducts
+      .filter((product) => product.enable === false)
+      .map((product) => product.productCode)
+  );
+  const existingCodes = new Set(
+    existingProducts.map((product) => product.productCode)
+  );
+  const skippedDisabledProducts = [...products, ...invalidPriceProductRows]
+    .filter((product) => disabledCodes.has(product.productCode))
+    .map((product) => ({
+      row: product.row,
+      productCode: product.productCode,
+      title: product.title,
+      reason: "Product is disabled",
+    }))
+    .sort((first, second) => first.row - second.row);
+  const validProducts = products.filter(
+    (product) => !disabledCodes.has(product.productCode)
+  );
+  const validInvalidPriceRows = invalidPriceProductRows.filter(
+    (product) => !disabledCodes.has(product.productCode)
+  );
+  const result = await productRepository.bulkUpsert(
+    validProducts.map(({ row, ...product }) => product),
+    existingCodes
+  );
+  const invalidPriceProductCodes = validInvalidPriceRows.map(
     (product) => product.productCode
   );
   const existingInvalidPriceProducts =
@@ -403,7 +454,7 @@ const uploadProductExcel = async (file) => {
   );
   const zeroPriceProductRowsToCreate = Array.from(
     new Map(
-      invalidPriceProductRows
+      validInvalidPriceRows
         .filter(
           (product) => !existingInvalidPriceProductCodes.has(product.productCode)
         )
@@ -414,7 +465,7 @@ const uploadProductExcel = async (file) => {
   await productRepository.bulkCreateMissingWithZeroPrice(
     zeroPriceProductRowsToCreate
   );
-  const invalidPriceProducts = invalidPriceProductRows.map((product) => ({
+  const invalidPriceProducts = validInvalidPriceRows.map((product) => ({
     row: product.row,
     productCode: product.productCode,
     title: product.title,
@@ -432,14 +483,18 @@ const uploadProductExcel = async (file) => {
   );
   const createdInvalidPriceRows = createdInvalidPriceProducts.length;
   const skippedInvalidPriceRows = skippedInvalidPriceProducts.length;
-  const invalidRows = invalidPriceProducts.length + errors.length;
-  const zeroPriceRows = zeroPriceProducts.length;
+  const invalidRows =
+    invalidPriceProducts.length + errors.length + skippedDisabledProducts.length;
+  const activeZeroPriceProducts = zeroPriceProducts.filter(
+    (product) => !disabledCodes.has(product.productCode)
+  );
+  const zeroPriceRows = activeZeroPriceProducts.length;
   const inserted = result.upsertedCount || 0;
   const updated = result.modifiedCount || 0;
 
   return {
     totalRows,
-    validRows: products.length,
+    validRows: validProducts.length,
     invalidRows,
     zeroPriceRows,
     newProducts: inserted,
@@ -447,9 +502,10 @@ const uploadProductExcel = async (file) => {
     createdInvalidPriceRows,
     skippedInvalidPriceRows,
     errorRows: errors.length,
-    zeroPriceProducts,
+    zeroPriceProducts: activeZeroPriceProducts,
     createdInvalidPriceProducts,
     skippedInvalidPriceProducts,
+    skippedDisabledProducts,
     errors,
   };
 };
@@ -465,10 +521,20 @@ const updateProductAlias = async (productId, payload) => {
     throw new AppError("Product alias is required", 400);
   }
 
+  const existingProduct = await productRepository.findById(productId);
+
+  if (!existingProduct) {
+    throw new AppError("Product not found", 404);
+  }
+
+  if (existingProduct.enable === false) {
+    throw new AppError("Product is disabled", 409);
+  }
+
   const product = await productRepository.updateAliasById(productId, alias);
 
   if (!product) {
-    throw new AppError("Product not found", 404);
+    throw new AppError("Product is disabled", 409);
   }
 
   return product;
@@ -483,6 +549,10 @@ const updateProductThresholds = async (productId, payload) => {
 
   if (!existingProduct) {
     throw new AppError("Product not found", 404);
+  }
+
+  if (existingProduct.enable === false) {
+    throw new AppError("Product is disabled", 409);
   }
 
   const warningThreshold =
@@ -502,14 +572,44 @@ const updateProductThresholds = async (productId, payload) => {
     payload
   );
 
+  if (!product) {
+    throw new AppError("Product is disabled", 409);
+  }
+
+  return formatProduct(product);
+};
+
+const updateProductEnable = async (productId, enable) => {
+  if (!mongoose.Types.ObjectId.isValid(productId)) {
+    throw new AppError("Invalid product id", 400);
+  }
+
+  const existingProduct = await productRepository.findById(productId);
+
+  if (!existingProduct) {
+    throw new AppError("Product not found", 404);
+  }
+
+  if (existingProduct.enable === false && !enable) {
+    throw new AppError("Product is already disabled", 409);
+  }
+
+  const product = await productRepository.updateEnableById(productId, enable);
+
+  if (!product) {
+    throw new AppError("Product is already disabled", 409);
+  }
+
   return formatProduct(product);
 };
 
 module.exports = {
   ensureProductAliases,
   ensureProductThresholds,
+  ensureProductEnableDefaults,
   getProducts,
   updateProductAlias,
+  updateProductEnable,
   updateProductThresholds,
   uploadProductExcel,
 };

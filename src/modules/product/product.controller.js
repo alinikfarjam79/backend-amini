@@ -2,12 +2,21 @@ const productService = require("./product.service");
 const asyncHandler = require("../../shared/utils/asyncHandler");
 
 const getProducts = asyncHandler(async (req, res) => {
-  const result = await productService.getProducts(req.query);
+  const result = await productService.getProducts(req.query, req.user.role);
 
   res.status(200).json({
     success: true,
     data: result,
   });
+});
+
+const updateProductEnable = asyncHandler(async (req, res) => {
+  const product = await productService.updateProductEnable(
+    req.params.productId,
+    req.body.enable
+  );
+
+  res.status(200).json({ success: true, data: product });
 });
 
 const updateProductAlias = asyncHandler(async (req, res) => {
@@ -51,6 +60,7 @@ const uploadProductExcel = asyncHandler(async (req, res) => {
 
 module.exports = {
   getProducts,
+  updateProductEnable,
   updateProductAlias,
   updateProductThresholds,
   uploadProductExcel,
