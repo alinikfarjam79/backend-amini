@@ -191,7 +191,6 @@ const parseProductRows = (worksheet) => {
 
     if (productCode && title && priceResult.isValid) {
       products.push({
-        row: rowNumber,
         productCode,
         title,
         barcode,
@@ -434,39 +433,8 @@ const uploadProductExcel = async (file) => {
     invalidPriceProductRows,
     totalRows,
   } = parseProductRows(workbook.Sheets[firstSheetName]);
-  const productCodes = [...new Set([
-    ...products.map((product) => product.productCode),
-    ...invalidPriceProductRows.map((product) => product.productCode),
-  ])];
-  const existingProducts = await productRepository.findByProductCodes(productCodes);
-  const disabledCodes = new Set(
-    existingProducts
-      .filter((product) => product.enable === false)
-      .map((product) => product.productCode)
-  );
-  const existingCodes = new Set(
-    existingProducts.map((product) => product.productCode)
-  );
-  const skippedDisabledProducts = [...products, ...invalidPriceProductRows]
-    .filter((product) => disabledCodes.has(product.productCode))
-    .map((product) => ({
-      row: product.row,
-      productCode: product.productCode,
-      title: product.title,
-      reason: "Product is disabled",
-    }))
-    .sort((first, second) => first.row - second.row);
-  const validProducts = products.filter(
-    (product) => !disabledCodes.has(product.productCode)
-  );
-  const validInvalidPriceRows = invalidPriceProductRows.filter(
-    (product) => !disabledCodes.has(product.productCode)
-  );
-  const result = await productRepository.bulkUpsert(
-    validProducts.map(({ row, ...product }) => product),
-    existingCodes
-  );
-  const invalidPriceProductCodes = validInvalidPriceRows.map(
+  const result = await productRepository.bulkUpsert(products);
+  const invalidPriceProductCodes = invalidPriceProductRows.map(
     (product) => product.productCode
   );
   const existingInvalidPriceProducts =
@@ -478,7 +446,7 @@ const uploadProductExcel = async (file) => {
   );
   const zeroPriceProductRowsToCreate = Array.from(
     new Map(
-      validInvalidPriceRows
+      invalidPriceProductRows
         .filter(
           (product) => !existingInvalidPriceProductCodes.has(product.productCode)
         )
@@ -489,7 +457,7 @@ const uploadProductExcel = async (file) => {
   await productRepository.bulkCreateMissingWithZeroPrice(
     zeroPriceProductRowsToCreate
   );
-  const invalidPriceProducts = validInvalidPriceRows.map((product) => ({
+  const invalidPriceProducts = invalidPriceProductRows.map((product) => ({
     row: product.row,
     productCode: product.productCode,
     title: product.title,
@@ -507,18 +475,14 @@ const uploadProductExcel = async (file) => {
   );
   const createdInvalidPriceRows = createdInvalidPriceProducts.length;
   const skippedInvalidPriceRows = skippedInvalidPriceProducts.length;
-  const invalidRows =
-    invalidPriceProducts.length + errors.length + skippedDisabledProducts.length;
-  const activeZeroPriceProducts = zeroPriceProducts.filter(
-    (product) => !disabledCodes.has(product.productCode)
-  );
-  const zeroPriceRows = activeZeroPriceProducts.length;
+  const invalidRows = invalidPriceProducts.length + errors.length;
+  const zeroPriceRows = zeroPriceProducts.length;
   const inserted = result.upsertedCount || 0;
   const updated = result.modifiedCount || 0;
 
   return {
     totalRows,
-    validRows: validProducts.length,
+    validRows: products.length,
     invalidRows,
     zeroPriceRows,
     newProducts: inserted,
@@ -526,10 +490,9 @@ const uploadProductExcel = async (file) => {
     createdInvalidPriceRows,
     skippedInvalidPriceRows,
     errorRows: errors.length,
-    zeroPriceProducts: activeZeroPriceProducts,
+    zeroPriceProducts,
     createdInvalidPriceProducts,
     skippedInvalidPriceProducts,
-    skippedDisabledProducts,
     errors,
   };
 };
@@ -545,20 +508,10 @@ const updateProductAlias = async (productId, payload) => {
     throw new AppError("Product alias is required", 400);
   }
 
-  const existingProduct = await productRepository.findById(productId);
-
-  if (!existingProduct) {
-    throw new AppError("Product not found", 404);
-  }
-
-  if (existingProduct.enable === false) {
-    throw new AppError("Product is disabled", 409);
-  }
-
   const product = await productRepository.updateAliasById(productId, alias);
 
   if (!product) {
-    throw new AppError("Product is disabled", 409);
+    throw new AppError("Product not found", 404);
   }
 
   const [formattedProduct] = await formatProductsWithWarehouseQuantities([
@@ -576,10 +529,6 @@ const updateProductThresholds = async (productId, payload) => {
 
   if (!existingProduct) {
     throw new AppError("Product not found", 404);
-  }
-
-  if (existingProduct.enable === false) {
-    throw new AppError("Product is disabled", 409);
   }
 
   const warningThreshold =
@@ -600,7 +549,7 @@ const updateProductThresholds = async (productId, payload) => {
   );
 
   if (!product) {
-    throw new AppError("Product is disabled", 409);
+    throw new AppError("Product not found", 404);
   }
 
   const [formattedProduct] = await formatProductsWithWarehouseQuantities([
@@ -620,14 +569,10 @@ const updateProductEnable = async (productId, enable) => {
     throw new AppError("Product not found", 404);
   }
 
-  if (existingProduct.enable === false && !enable) {
-    throw new AppError("Product is already disabled", 409);
-  }
-
   const product = await productRepository.updateEnableById(productId, enable);
 
   if (!product) {
-    throw new AppError("Product is already disabled", 409);
+    throw new AppError("Product not found", 404);
   }
 
   const [formattedProduct] = await formatProductsWithWarehouseQuantities([

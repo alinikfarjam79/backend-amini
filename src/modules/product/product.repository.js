@@ -12,7 +12,7 @@ const findById = (id) => {
 
 const findByProductCodes = (productCodes) => {
   return Product.find({ productCode: { $in: productCodes } }).select(
-    "productCode title enable"
+    "productCode title"
   );
 };
 
@@ -25,7 +25,6 @@ const ensureEnableDefaults = () => {
 
 const ensureAliases = async () => {
   const products = await Product.find({
-      enable: { $ne: false },
       $or: [
         { alias: { $exists: false } },
         { alias: null },
@@ -64,7 +63,6 @@ const ensureThresholdDefaults = async () => {
     updates.map(([field, value]) =>
       Product.updateMany(
         {
-          enable: { $ne: false },
           $or: [{ [field]: { $exists: false } }, { [field]: null }],
         },
         { $set: { [field]: value } }
@@ -74,7 +72,6 @@ const ensureThresholdDefaults = async () => {
 
   const legacyDisabledResult = await Product.updateMany(
     {
-      enable: { $ne: false },
       $and: [
         {
           $or: [
@@ -94,7 +91,6 @@ const ensureThresholdDefaults = async () => {
   );
   const enabledDefaultResult = await Product.updateMany(
     {
-      enable: { $ne: false },
       $or: [
         { thresholdEnabled: { $exists: false } },
         { thresholdEnabled: null },
@@ -104,7 +100,6 @@ const ensureThresholdDefaults = async () => {
   );
   const legacyCleanupResult = await Product.updateMany(
     {
-      enable: { $ne: false },
       $or: [
         { warningThresholdEnabled: { $exists: true } },
         { criticalThresholdEnabled: { $exists: true } },
@@ -136,7 +131,7 @@ const ensureThresholdDefaults = async () => {
   };
 };
 
-const bulkUpsert = (products, existingProductCodes = new Set()) => {
+const bulkUpsert = (products) => {
   if (!Array.isArray(products) || products.length === 0) {
     return {
       upsertedCount: 0,
@@ -147,16 +142,14 @@ const bulkUpsert = (products, existingProductCodes = new Set()) => {
 
   const operations = products.map((product) => ({
     updateOne: {
-      filter: existingProductCodes.has(product.productCode)
-        ? { productCode: product.productCode, enable: { $ne: false } }
-        : { productCode: product.productCode },
+      filter: { productCode: product.productCode },
       update: {
         $set: product,
         $setOnInsert: {
           alias: product.title,
         },
       },
-      upsert: !existingProductCodes.has(product.productCode),
+      upsert: true,
     },
   }));
 
@@ -208,7 +201,7 @@ const bulkUpdateWarehouseInventory = ({ inventorySummaries }) => {
 
   const operations = inventorySummaries.map((item) => ({
     updateOne: {
-      filter: { productCode: item.productCode, enable: { $ne: false } },
+      filter: { productCode: item.productCode },
       update: {
         $set: {
           quantity: item.quantity,
@@ -225,22 +218,18 @@ const bulkUpdateWarehouseInventory = ({ inventorySummaries }) => {
 };
 
 const updateAliasById = (id, alias) => {
-  return Product.findOneAndUpdate(
-    { _id: id, enable: { $ne: false } },
+  return Product.findByIdAndUpdate(
+    id,
     { alias },
     { returnDocument: "after", runValidators: true }
   );
 };
 
 const updateThresholdsById = (id, thresholds) => {
-  return Product.findOneAndUpdate(
-    { _id: id, enable: { $ne: false } },
-    thresholds,
-    {
-      returnDocument: "after",
-      runValidators: true,
-    }
-  )
+  return Product.findByIdAndUpdate(id, thresholds, {
+    returnDocument: "after",
+    runValidators: true,
+  })
     .populate({
       path: "warehouses",
       select: "-items",
@@ -249,8 +238,8 @@ const updateThresholdsById = (id, thresholds) => {
 };
 
 const updateEnableById = (id, enable) => {
-  return Product.findOneAndUpdate(
-    enable ? { _id: id } : { _id: id, enable: { $ne: false } },
+  return Product.findByIdAndUpdate(
+    id,
     { enable },
     { returnDocument: "after", runValidators: true }
   )

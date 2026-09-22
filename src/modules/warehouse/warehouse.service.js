@@ -134,7 +134,6 @@ const parseWarehouseProductRows = (worksheet) => {
   const errors = [];
   const zeroOrNegativeQuantityProducts = [];
   const invalidQuantityProductRows = [];
-  const validProductRows = [];
   const productRowsByCode = new Map();
   let validRowsCount = 0;
 
@@ -188,7 +187,6 @@ const parseWarehouseProductRows = (worksheet) => {
 
     if (productCode && title && quantityResult.isValid) {
       validRowsCount += 1;
-      validProductRows.push({ row: rowNumber, productCode, title });
       productRowsByCode.set(productCode, {
         productCode,
         title,
@@ -202,7 +200,6 @@ const parseWarehouseProductRows = (worksheet) => {
     errors,
     zeroOrNegativeQuantityProducts,
     invalidQuantityProductRows,
-    validProductRows,
     validRowsCount,
     totalRows: rows.length,
   };
@@ -272,7 +269,6 @@ const uploadWarehouseProductsExcel = async ({ warehouseId, file }) => {
     errors,
     zeroOrNegativeQuantityProducts,
     invalidQuantityProductRows,
-    validProductRows,
     validRowsCount,
     totalRows,
   } = parseWarehouseProductRows(workbook.Sheets[firstSheetName]);
@@ -293,35 +289,12 @@ const uploadWarehouseProductsExcel = async ({ warehouseId, file }) => {
     products.map((product) => [product.productCode, product])
   );
   const existingProductCodes = new Set(productByCode.keys());
-  const disabledCodes = new Set(
-    products
-      .filter((product) => product.enable === false)
-      .map((product) => product.productCode)
-  );
-  const skippedDisabledProducts = [
-    ...validProductRows,
-    ...invalidQuantityProductRows,
-  ]
-    .filter((row) => disabledCodes.has(row.productCode))
-    .map((row) => ({
-      row: row.row,
-      productCode: row.productCode,
-      title: row.title,
-      reason: "Product is disabled",
-    }))
-    .sort((first, second) => first.row - second.row);
-  const activeParsedRows = parsedRows.filter(
-    (row) => !disabledCodes.has(row.productCode)
-  );
-  const activeInvalidQuantityRows = invalidQuantityProductRows.filter(
-    (row) => !disabledCodes.has(row.productCode)
-  );
   const validRowsToCreate = uniqueRowsByProductCode(
-    activeParsedRows.filter((row) => !existingProductCodes.has(row.productCode))
+    parsedRows.filter((row) => !existingProductCodes.has(row.productCode))
   );
   const invalidQuantityRowsToCreate = Array.from(
     new Map(
-      activeInvalidQuantityRows
+      invalidQuantityProductRows
         .filter((row) => !existingProductCodes.has(row.productCode))
         .map((row) => [row.productCode, row])
     ).values()
@@ -344,9 +317,7 @@ const uploadWarehouseProductsExcel = async ({ warehouseId, file }) => {
     productByCode.set(product.productCode, product);
   });
 
-  const parsedProductCodes = new Set(
-    activeParsedRows.map((row) => row.productCode)
-  );
+  const parsedProductCodes = new Set(parsedRows.map((row) => row.productCode));
   const invalidQuantityItems = invalidQuantityRowsToCreate
     .filter(
       (row) =>
@@ -362,7 +333,7 @@ const uploadWarehouseProductsExcel = async ({ warehouseId, file }) => {
         quantity: 0,
       };
     });
-  const items = activeParsedRows
+  const items = parsedRows
     .filter((row) => productByCode.has(row.productCode))
     .map((row) => {
       const product = productByCode.get(row.productCode);
@@ -401,7 +372,7 @@ const uploadWarehouseProductsExcel = async ({ warehouseId, file }) => {
           inventorySummaries,
         })
       : { modifiedCount: 0 };
-  const invalidQuantityProducts = activeInvalidQuantityRows.map((row) => ({
+  const invalidQuantityProducts = invalidQuantityProductRows.map((row) => ({
     row: row.row,
     productCode: row.productCode,
     title: row.title,
@@ -418,30 +389,22 @@ const uploadWarehouseProductsExcel = async ({ warehouseId, file }) => {
   const skippedInvalidQuantityProducts = invalidQuantityProducts.filter(
     (product) => product.action === "skipped_existing_product"
   );
-  const invalidRows =
-    invalidQuantityProducts.length + errors.length + skippedDisabledProducts.length;
-  const activeZeroOrNegativeQuantityProducts =
-    zeroOrNegativeQuantityProducts.filter(
-      (row) => !disabledCodes.has(row.productCode)
-    );
+  const invalidRows = invalidQuantityProducts.length + errors.length;
 
   return {
     totalRows,
-    validRows: validRowsCount - validProductRows.filter(
-      (row) => disabledCodes.has(row.productCode)
-    ).length,
+    validRows: validRowsCount,
     invalidRows,
-    zeroQuantityRows: activeZeroOrNegativeQuantityProducts.length,
-    zeroOrNegativeQuantityRows: activeZeroOrNegativeQuantityProducts.length,
+    zeroQuantityRows: zeroOrNegativeQuantityProducts.length,
+    zeroOrNegativeQuantityRows: zeroOrNegativeQuantityProducts.length,
     newProducts: rowsToCreate.length,
     updatedProducts,
     createdInvalidQuantityRows: createdInvalidQuantityProducts.length,
     skippedInvalidQuantityRows: skippedInvalidQuantityProducts.length,
     errorRows: errors.length,
-    zeroOrNegativeQuantityProducts: activeZeroOrNegativeQuantityProducts,
+    zeroOrNegativeQuantityProducts,
     createdInvalidQuantityProducts,
     skippedInvalidQuantityProducts,
-    skippedDisabledProducts,
     errors,
     productsUpdated: productUpdateResult.modifiedCount || 0,
     warehouse: warehouseUpdateResult.warehouse,

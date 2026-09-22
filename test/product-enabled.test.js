@@ -29,7 +29,7 @@ test("new products default to enable=true", () => {
   assert.equal(product.enable, true);
 });
 
-test("repository bulk updates guard existing disabled products", async () => {
+test("repository bulk updates include disabled products without changing enable", async () => {
   const originalBulkWrite = Product.bulkWrite;
   let operations;
   Product.bulkWrite = async (items) => {
@@ -39,23 +39,21 @@ test("repository bulk updates guard existing disabled products", async () => {
 
   try {
     await productRepository.bulkUpsert(
-      [{ productCode: "ACTIVE", title: "Active", originalPrice: 1 }],
-      new Set(["ACTIVE"])
+      [{ productCode: "DISABLED", title: "Disabled", originalPrice: 1 }]
     );
     assert.deepEqual(operations[0].updateOne.filter, {
-      productCode: "ACTIVE",
-      enable: { $ne: false },
+      productCode: "DISABLED",
     });
-    assert.equal(operations[0].updateOne.upsert, false);
+    assert.equal(operations[0].updateOne.upsert, true);
+    assert.ok(!("enable" in operations[0].updateOne.update.$set));
 
     await productRepository.bulkUpdateWarehouseInventory({
       inventorySummaries: [
-        { productCode: "ACTIVE", quantity: 5, warehouses: [] },
+        { productCode: "DISABLED", quantity: 5, warehouses: [] },
       ],
     });
     assert.deepEqual(operations[0].updateOne.filter, {
-      productCode: "ACTIVE",
-      enable: { $ne: false },
+      productCode: "DISABLED",
     });
   } finally {
     Product.bulkWrite = originalBulkWrite;
@@ -96,36 +94,44 @@ test("main and monitoring lists exclude disabled products", async () => {
   );
 });
 
-test("disabled product can only be re-enabled", async () => {
+test("disabled product can still be edited and its visibility toggled", async () => {
   productRepository.findById = async () => ({ _id: productId, enable: false });
   warehouseRepository.getProductWarehouseQuantities = async () => [];
-  productRepository.updateAliasById = async () => {
-    throw new Error("alias update must not run");
-  };
-  productRepository.updateThresholdsById = async () => {
-    throw new Error("threshold update must not run");
-  };
+  productRepository.updateAliasById = async (_id, alias) => ({
+    _id: productId,
+    productCode: "DISABLED",
+    title: "Existing",
+    alias,
+    enable: false,
+  });
+  productRepository.updateThresholdsById = async (_id, thresholds) => ({
+    _id: productId,
+    productCode: "DISABLED",
+    title: "Existing",
+    enable: false,
+    ...thresholds,
+  });
   productRepository.updateEnableById = async (_id, enable) => ({
     _id: productId,
+    productCode: "DISABLED",
     title: "Existing",
     enable,
   });
 
-  await assert.rejects(
-    productService.updateProductAlias(productId, { alias: "New" }),
-    { statusCode: 409 }
+  assert.equal(
+    (await productService.updateProductAlias(productId, { alias: "New" })).alias,
+    "New"
   );
-  await assert.rejects(
-    productService.updateProductThresholds(productId, { warningThreshold: 20 }),
-    { statusCode: 409 }
+  assert.equal(
+    (await productService.updateProductThresholds(productId, { warningThreshold: 20 }))
+      .warningThreshold,
+    20
   );
-  await assert.rejects(productService.updateProductEnable(productId, false), {
-    statusCode: 409,
-  });
+  assert.equal((await productService.updateProductEnable(productId, false)).enable, false);
   assert.equal((await productService.updateProductEnable(productId, true)).enable, true);
 });
 
-test("price upload skips disabled products and updates active rows", async () => {
+test("price upload updates disabled products but still skips invalid prices", async () => {
   let upsertedProducts;
   productRepository.findByProductCodes = async () => [
     { productCode: "DISABLED", title: "Disabled", enable: false },
@@ -145,14 +151,16 @@ test("price upload skips disabled products and updates active rows", async () =>
     ])
   );
 
-  assert.deepEqual(upsertedProducts.map((product) => product.productCode), ["ACTIVE"]);
-  assert.equal(result.skippedDisabledProducts.length, 2);
-  assert.equal(result.skippedDisabledProducts[0].row, 2);
-  assert.equal(result.skippedDisabledProducts[1].row, 4);
-  assert.equal(result.updatedProducts, 1);
+  assert.deepEqual(upsertedProducts.map((product) => product.productCode), [
+    "DISABLED",
+    "ACTIVE",
+  ]);
+  assert.equal(result.updatedProducts, 2);
+  assert.equal(result.skippedInvalidPriceProducts[0].row, 4);
+  assert.equal(result.invalidRows, 1);
 });
 
-test("warehouse upload leaves disabled inventory untouched", async () => {
+test("warehouse upload updates disabled inventory but still skips invalid quantity", async () => {
   let updatedItems;
   let updatedInventory;
   warehouseRepository.findSummaryById = async () => ({ _id: warehouseId });
@@ -181,9 +189,9 @@ test("warehouse upload leaves disabled inventory untouched", async () => {
     ]),
   });
 
-  assert.deepEqual(updatedItems.map((item) => item.productCode), ["ACTIVE"]);
-  assert.deepEqual(updatedInventory.map((item) => item.productCode), ["ACTIVE"]);
-  assert.equal(result.skippedDisabledProducts.length, 2);
-  assert.equal(result.skippedDisabledProducts[0].row, 2);
-  assert.equal(result.skippedDisabledProducts[1].row, 4);
+  assert.deepEqual(updatedItems.map((item) => item.productCode), ["DISABLED", "ACTIVE"]);
+  assert.equal(updatedItems[0].quantity, 9);
+  assert.deepEqual(updatedInventory.map((item) => item.productCode), ["DISABLED", "ACTIVE"]);
+  assert.equal(result.skippedInvalidQuantityProducts[0].row, 4);
+  assert.equal(result.invalidRows, 1);
 });
