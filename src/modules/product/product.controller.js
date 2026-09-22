@@ -10,6 +10,12 @@ const getProducts = asyncHandler(async (req, res) => {
   });
 });
 
+const getProductById = asyncHandler(async (req, res) => {
+  const product = await productService.getProductById(req.params.productId);
+
+  res.status(200).json({ success: true, data: product });
+});
+
 const updateProductEnable = asyncHandler(async (req, res) => {
   const product = await productService.updateProductEnable(
     req.params.productId,
@@ -60,6 +66,7 @@ const uploadProductExcel = asyncHandler(async (req, res) => {
 
 module.exports = {
   getProducts,
+  getProductById,
   updateProductEnable,
   updateProductAlias,
   updateProductThresholds,

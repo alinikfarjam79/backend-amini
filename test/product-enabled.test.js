@@ -94,6 +94,29 @@ test("main and monitoring lists exclude disabled products", async () => {
   );
 });
 
+test("admin detail returns disabled product with warehouse quantities", async () => {
+  productRepository.findById = async () => ({
+    _id: productId,
+    productCode: "DISABLED",
+    title: "Existing",
+    quantity: 7,
+    enable: false,
+  });
+  warehouseRepository.getProductWarehouseQuantities = async (codes) => {
+    assert.deepEqual(codes, ["DISABLED"]);
+    return [{ productCode: "DISABLED", warehouse: { _id: warehouseId, name: "Plastic" }, quantity: 7 }];
+  };
+
+  const product = await productService.getProductById(productId);
+  assert.equal(product.enable, false);
+  assert.equal(product.quantity, 7);
+  assert.equal(product.warehouses[0].quantity, 7);
+
+  await assert.rejects(productService.getProductById("bad-id"), { statusCode: 400 });
+  productRepository.findById = async () => null;
+  await assert.rejects(productService.getProductById(productId), { statusCode: 404 });
+});
+
 test("disabled product can still be edited and its visibility toggled", async () => {
   productRepository.findById = async () => ({ _id: productId, enable: false });
   warehouseRepository.getProductWarehouseQuantities = async () => [];

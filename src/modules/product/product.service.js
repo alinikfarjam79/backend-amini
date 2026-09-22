@@ -322,6 +322,21 @@ const getProducts = async (query = {}, role) => {
   return formatProductsWithWarehouseQuantities(products);
 };
 
+const getProductById = async (productId) => {
+  if (!mongoose.Types.ObjectId.isValid(productId)) {
+    throw new AppError("Invalid product id", 400);
+  }
+
+  const product = await productRepository.findById(productId);
+
+  if (!product) {
+    throw new AppError("Product not found", 404);
+  }
+
+  const [formattedProduct] = await formatProductsWithWarehouseQuantities([product]);
+  return formattedProduct;
+};
+
 const formatProductsWithWarehouseQuantities = async (products) => {
   if (products.length === 0) {
     return [];
@@ -586,6 +601,7 @@ module.exports = {
   ensureProductThresholds,
   ensureProductEnableDefaults,
   getProducts,
+  getProductById,
   updateProductAlias,
   updateProductEnable,
   updateProductThresholds,

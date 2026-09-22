@@ -17,6 +17,7 @@ const router = express.Router();
 router.use(protect);
 
 router.get("/", productController.getProducts);
+router.get("/:productId", allowRoles(ROLES.ADMIN), productController.getProductById);
 router.patch(
   "/:productId/alias",
   allowRoles(ROLES.ADMIN),
