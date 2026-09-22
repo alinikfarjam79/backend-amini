@@ -2,6 +2,7 @@ const XLSX = require("xlsx");
 const mongoose = require("mongoose");
 
 const productRepository = require("./product.repository");
+const warehouseRepository = require("../warehouse/warehouse.repository");
 const AppError = require("../../shared/utils/AppError");
 const ROLES = require("../../shared/constants/roles");
 
@@ -319,7 +320,30 @@ const getProducts = async (query = {}, role) => {
 
   const products = await productRepository.findAll(filter);
 
-  return products.map(formatProduct);
+  return formatProductsWithWarehouseQuantities(products);
+};
+
+const formatProductsWithWarehouseQuantities = async (products) => {
+  if (products.length === 0) {
+    return [];
+  }
+
+  const productCodes = [...new Set(products.map((product) => product.productCode))];
+  const warehouseQuantities =
+    await warehouseRepository.getProductWarehouseQuantities(productCodes);
+  const warehousesByProductCode = new Map();
+
+  warehouseQuantities.forEach(({ productCode, warehouse, quantity }) => {
+    if (!warehousesByProductCode.has(productCode)) {
+      warehousesByProductCode.set(productCode, []);
+    }
+
+    warehousesByProductCode.get(productCode).push({ ...warehouse, quantity });
+  });
+
+  return products.map((product) =>
+    formatProduct(product, warehousesByProductCode.get(product.productCode) || [])
+  );
 };
 
 const getInventoryStatus = (product) => {
@@ -351,7 +375,7 @@ const getInventoryStatus = (product) => {
   return "normal";
 };
 
-const formatProduct = (product) => {
+const formatProduct = (product, warehouses) => {
   const productObject =
     typeof product.toObject === "function" ? product.toObject() : product;
   const {
@@ -375,7 +399,7 @@ const formatProduct = (product) => {
     thresholdEnabled,
     enable: productObject.enable !== false,
     inventoryStatus: getInventoryStatus(productObject),
-    warehouses: productObject.warehouses || [],
+    warehouses,
   };
 };
 
@@ -537,7 +561,10 @@ const updateProductAlias = async (productId, payload) => {
     throw new AppError("Product is disabled", 409);
   }
 
-  return product;
+  const [formattedProduct] = await formatProductsWithWarehouseQuantities([
+    product,
+  ]);
+  return formattedProduct;
 };
 
 const updateProductThresholds = async (productId, payload) => {
@@ -576,7 +603,10 @@ const updateProductThresholds = async (productId, payload) => {
     throw new AppError("Product is disabled", 409);
   }
 
-  return formatProduct(product);
+  const [formattedProduct] = await formatProductsWithWarehouseQuantities([
+    product,
+  ]);
+  return formattedProduct;
 };
 
 const updateProductEnable = async (productId, enable) => {
@@ -600,7 +630,10 @@ const updateProductEnable = async (productId, enable) => {
     throw new AppError("Product is already disabled", 409);
   }
 
-  return formatProduct(product);
+  const [formattedProduct] = await formatProductsWithWarehouseQuantities([
+    product,
+  ]);
+  return formattedProduct;
 };
 
 module.exports = {

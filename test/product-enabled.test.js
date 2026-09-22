@@ -98,6 +98,7 @@ test("main and monitoring lists exclude disabled products", async () => {
 
 test("disabled product can only be re-enabled", async () => {
   productRepository.findById = async () => ({ _id: productId, enable: false });
+  warehouseRepository.getProductWarehouseQuantities = async () => [];
   productRepository.updateAliasById = async () => {
     throw new Error("alias update must not run");
   };

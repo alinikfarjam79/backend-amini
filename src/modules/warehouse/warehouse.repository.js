@@ -181,6 +181,47 @@ const getInventorySummariesForProductUpdate = (productCodes) => {
   ).allowDiskUse(true);
 };
 
+const getProductWarehouseQuantities = (productCodes) => {
+  if (!Array.isArray(productCodes) || productCodes.length === 0) {
+    return [];
+  }
+
+  const matchProducts = {
+    $match: { "items.productCode": { $in: productCodes } },
+  };
+
+  return Warehouse.aggregate([
+    matchProducts,
+    { $unwind: "$items" },
+    matchProducts,
+    {
+      $group: {
+        _id: { warehouseId: "$_id", productCode: "$items.productCode" },
+        quantity: { $sum: "$items.quantity" },
+        warehouse: {
+          $first: {
+            _id: "$_id",
+            name: "$name",
+            isDefault: "$isDefault",
+            isActive: "$isActive",
+            createdAt: "$createdAt",
+            updatedAt: "$updatedAt",
+            __v: "$__v",
+          },
+        },
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        productCode: "$_id.productCode",
+        quantity: 1,
+        warehouse: 1,
+      },
+    },
+  ]).allowDiskUse(true);
+};
+
 module.exports = {
   create,
   findAll,
@@ -191,5 +232,6 @@ module.exports = {
   getInventorySummaries,
   getInventorySummariesByProductCodes,
   getInventorySummariesForProductUpdate,
+  getProductWarehouseQuantities,
   replaceItemsByProductCodes,
 };

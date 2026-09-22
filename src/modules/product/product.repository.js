@@ -3,10 +3,6 @@ const Product = require("./product.model");
 const findAll = (filter = {}) => {
   return Product.find(filter)
     .sort({ createdAt: -1 })
-    .populate({
-      path: "warehouses",
-      select: "-items",
-    })
     .lean();
 };
 
