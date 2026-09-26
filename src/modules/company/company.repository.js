@@ -46,6 +46,28 @@ const updateFileTitleById = (companyId, fileId, title) => {
   );
 };
 
+const findWithPdfPages = () => {
+  return Company.find({ "files.sourceType": "pdf-page" })
+    .select("_id files")
+    .lean();
+};
+
+const bulkUpdateFileOrder = (companies) => {
+  if (!Array.isArray(companies) || companies.length === 0) {
+    return { matchedCount: 0, modifiedCount: 0 };
+  }
+
+  return Company.bulkWrite(
+    companies.map((company) => ({
+      updateOne: {
+        filter: { _id: company._id },
+        update: { $set: { files: company.files } },
+      },
+    })),
+    { ordered: false }
+  );
+};
+
 module.exports = {
   create,
   findAll,
@@ -55,4 +77,6 @@ module.exports = {
   addFilesById,
   removeFileById,
   updateFileTitleById,
+  findWithPdfPages,
+  bulkUpdateFileOrder,
 };

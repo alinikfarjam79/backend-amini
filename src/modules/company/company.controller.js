@@ -55,6 +55,19 @@ const deleteCompanyFile = asyncHandler(async (req, res) => {
   });
 });
 
+const downloadCompanyFile = asyncHandler(async (req, res, next) => {
+  const file = await companyService.getCompanyFileDownload({
+    companyId: req.params.companyId,
+    fileId: req.params.fileId,
+  });
+
+  res.download(file.filePath, file.downloadName, (error) => {
+    if (error) {
+      next(error);
+    }
+  });
+});
+
 const updateCompanyFileTitle = asyncHandler(async (req, res) => {
   const file = await companyService.updateCompanyFileTitle({
     companyId: req.params.companyId,
@@ -103,6 +116,7 @@ const uploadCompanyFile = asyncHandler(async (req, res) => {
 module.exports = {
   createCompany,
   deleteCompanyFile,
+  downloadCompanyFile,
   getCompanies,
   updateCompanyFileTitle,
   uploadCompanyFile,

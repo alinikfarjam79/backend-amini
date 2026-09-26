@@ -24,12 +24,12 @@ const normalizeSearch = (value) => {
   return value.trim();
 };
 
-const getFileDownloadUrl = (fileUrl, baseUrl) => {
-  if (!fileUrl || !baseUrl) {
-    return fileUrl;
+const getFileDownloadUrl = ({ companyId, fileId, baseUrl }) => {
+  if (!companyId || !fileId || !baseUrl) {
+    return undefined;
   }
 
-  return `${baseUrl}${fileUrl}`;
+  return `${baseUrl}/api/companies/${companyId}/files/${fileId}/download`;
 };
 
 const addDownloadUrls = (company, baseUrl) => {
@@ -40,9 +40,153 @@ const addDownloadUrls = (company, baseUrl) => {
     ...companyObject,
     files: (companyObject.files || []).map((file) => ({
       ...file,
-      downloadUrl: getFileDownloadUrl(file.fileUrl, baseUrl),
+      downloadUrl: getFileDownloadUrl({
+        companyId: companyObject._id,
+        fileId: file._id,
+        baseUrl,
+      }),
+      downloadName: buildCompanyFileDownloadName(companyObject, file),
     })),
   };
+};
+
+const sanitizeDownloadNamePart = (value, fallback) => {
+  const sanitized = normalizeSearch(value)
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "-")
+    .replace(/\s+/g, " ")
+    .replace(/-+/g, "-")
+    .trim();
+
+  return sanitized || fallback;
+};
+
+const buildCompanyFileDownloadName = (company, file) => {
+  const title = sanitizeDownloadNamePart(file.title, "بدون عنوان");
+  const companyName = sanitizeDownloadNamePart(company.name, "بدون نام");
+  const publishedAt = sanitizeDownloadNamePart(file.publishedAt, "بدون تاریخ");
+  const extension =
+    path.extname(file.originalName || file.filePath || "").toLowerCase() ||
+    (file.mimeType === "image/png" ? ".png" : "");
+  let typeLabel = "";
+
+  if (file.sourceType === "pdf-combined") {
+    typeLabel = " - کلی";
+  } else if (file.sourceType === "pdf-page") {
+    typeLabel = ` - صفحه ${file.pageNumber || ""}`.trimEnd();
+  }
+
+  return `لیست قیمت - ${title} - ${companyName} - ${publishedAt}${typeLabel}${extension}`;
+};
+
+const getCompanyFileDownload = async ({ companyId, fileId }) => {
+  if (!mongoose.Types.ObjectId.isValid(companyId)) {
+    throw new AppError("Invalid company id", 400);
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(fileId)) {
+    throw new AppError("Invalid file id", 400);
+  }
+
+  const company = await companyRepository.findById(companyId);
+
+  if (!company) {
+    throw new AppError("Company not found", 404);
+  }
+
+  const file = company.files.id(fileId);
+
+  if (!file) {
+    throw new AppError("Company file not found", 404);
+  }
+
+  const resolvedUploadDirectory = path.resolve(uploadDirectory);
+  const resolvedFilePath = path.resolve(file.filePath);
+  const relativePath = path.relative(resolvedUploadDirectory, resolvedFilePath);
+
+  if (relativePath.startsWith("..") || path.isAbsolute(relativePath)) {
+    throw new AppError("Company file path is invalid", 400);
+  }
+
+  try {
+    await fs.access(resolvedFilePath);
+  } catch {
+    throw new AppError("Company file not found on server", 404);
+  }
+
+  return {
+    filePath: resolvedFilePath,
+    downloadName: buildCompanyFileDownloadName(company, file),
+  };
+};
+
+const getPdfUploadKey = (file) =>
+  [file.sourceOriginalName, file.title, file.publishedAt, file.uploadedBy]
+    .map((value) => String(value || ""))
+    .join("|");
+
+const reorderLegacyPdfFiles = (files = []) => {
+  const reorderedFiles = [];
+
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index];
+
+    if (file.sourceType !== "pdf-page") {
+      reorderedFiles.push(file);
+      continue;
+    }
+
+    const uploadKey = getPdfUploadKey(file);
+    const pages = [];
+    let nextIndex = index;
+
+    while (
+      nextIndex < files.length &&
+      files[nextIndex].sourceType === "pdf-page" &&
+      getPdfUploadKey(files[nextIndex]) === uploadKey
+    ) {
+      pages.push(files[nextIndex]);
+      nextIndex += 1;
+    }
+
+    const combinedFile = files[nextIndex];
+
+    if (
+      combinedFile?.sourceType === "pdf-combined" &&
+      getPdfUploadKey(combinedFile) === uploadKey
+    ) {
+      reorderedFiles.push(
+        combinedFile,
+        ...pages.sort((first, second) =>
+          (first.pageNumber || 0) - (second.pageNumber || 0)
+        )
+      );
+      index = nextIndex;
+      continue;
+    }
+
+    reorderedFiles.push(...pages);
+    index = nextIndex - 1;
+  }
+
+  return reorderedFiles;
+};
+
+const ensureCompanyPdfFileOrder = async () => {
+  const companies = await companyRepository.findWithPdfPages();
+  const updates = companies
+    .map((company) => ({
+      _id: company._id,
+      files: reorderLegacyPdfFiles(company.files),
+      originalFiles: company.files,
+    }))
+    .filter(({ files, originalFiles }) =>
+      files.some(
+        (file, index) => String(file._id) !== String(originalFiles[index]?._id)
+      )
+    )
+    .map(({ _id, files }) => ({ _id, files }));
+
+  return companyRepository.bulkUpdateFileOrder(updates);
 };
 
 const getCompanies = async (query = {}, baseUrl = "") => {
@@ -334,7 +478,7 @@ const convertPdfToImages = async (file, includePdfPages) => {
       originalName: file.originalname,
       outputBaseName,
     });
-    generatedFiles.push(combinedImage);
+    generatedFiles.unshift(combinedImage);
 
     if (!includePdfPages) {
       await Promise.all(
@@ -555,9 +699,13 @@ const uploadCompanyFiles = async ({
 };
 
 module.exports = {
+  buildCompanyFileDownloadName,
   createCompany,
   deleteCompanyFile,
+  ensureCompanyPdfFileOrder,
+  getCompanyFileDownload,
   getCompanies,
+  reorderLegacyPdfFiles,
   updateCompanyFileTitle,
   uploadCompanyFiles,
 };

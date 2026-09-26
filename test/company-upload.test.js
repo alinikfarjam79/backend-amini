@@ -40,6 +40,58 @@ repository.addFilesById = async (_id, files) => ({
   files,
 });
 
+test("legacy PDF files are reordered with combined image first", () => {
+  const legacyFiles = [
+    { _id: "page-2", sourceType: "pdf-page", pageNumber: 2, sourceOriginalName: "list.pdf" },
+    { _id: "page-1", sourceType: "pdf-page", pageNumber: 1, sourceOriginalName: "list.pdf" },
+    { _id: "combined", sourceType: "pdf-combined", sourceOriginalName: "list.pdf" },
+    { _id: "other", sourceType: "file" },
+  ];
+
+  assert.deepEqual(
+    service.reorderLegacyPdfFiles(legacyFiles).map((file) => file._id),
+    ["combined", "page-1", "page-2", "other"]
+  );
+});
+
+test("current PDF file order remains unchanged", () => {
+  const currentFiles = [
+    { _id: "combined", sourceType: "pdf-combined", sourceOriginalName: "list.pdf" },
+    { _id: "page-1", sourceType: "pdf-page", pageNumber: 1, sourceOriginalName: "list.pdf" },
+    { _id: "page-2", sourceType: "pdf-page", pageNumber: 2, sourceOriginalName: "list.pdf" },
+  ];
+
+  assert.deepEqual(
+    service.reorderLegacyPdfFiles(currentFiles).map((file) => file._id),
+    ["combined", "page-1", "page-2"]
+  );
+});
+
+test("company file download names include title, company, date, and PDF item type", () => {
+  const company = { name: "شرکت اشن" };
+  const commonFile = {
+    title: "رنگ‌های ساختمانی",
+    publishedAt: "1405/07/04",
+    originalName: "price-list.png",
+  };
+
+  assert.equal(
+    service.buildCompanyFileDownloadName(company, {
+      ...commonFile,
+      sourceType: "pdf-combined",
+    }),
+    "لیست قیمت - رنگ‌های ساختمانی - شرکت اشن - 1405-07-04 - کلی.png"
+  );
+  assert.equal(
+    service.buildCompanyFileDownloadName(company, {
+      ...commonFile,
+      sourceType: "pdf-page",
+      pageNumber: 2,
+    }),
+    "لیست قیمت - رنگ‌های ساختمانی - شرکت اشن - 1405-07-04 - صفحه 2.png"
+  );
+});
+
 test.after(async () => {
   await Promise.all(
     generatedPaths.map((filePath) => fs.rm(filePath, { force: true }))
@@ -78,6 +130,14 @@ for (const [setting, expectedCount] of [
       result.files.filter((file) => file.sourceType === "pdf-page").length,
       expectedCount - 1
     );
+    assert.equal(result.files[0].sourceType, "pdf-combined");
+
+    if (expectedCount > 1) {
+      assert.deepEqual(
+        result.files.slice(1).map((file) => file.pageNumber),
+        [1, 2]
+      );
+    }
 
     for (const file of result.files) {
       generatedPaths.push(file.filePath);

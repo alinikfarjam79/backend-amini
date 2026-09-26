@@ -27,6 +27,10 @@ router.post("/:companyId/files", uploadCompanyFileMiddlewares);
 router.use(allowRoles(ROLES.ADMIN));
 router.post("/", validate(createCompanySchema), companyController.createCompany);
 router.get("/", companyController.getCompanies);
+router.get(
+  "/:companyId/files/:fileId/download",
+  companyController.downloadCompanyFile
+);
 router.patch(
   "/:companyId/files/:fileId/title",
   validate(updateCompanyFileTitleSchema),
