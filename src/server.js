@@ -10,6 +10,9 @@ const { ensureDefaultWarehouses } = require("./modules/warehouse/warehouse.seed"
 const {
     ensureCompanyPdfFileOrder,
 } = require("./modules/company/company.service");
+const {
+    ensureCompanyProductPriceIndexes,
+} = require("./modules/companyProductPrice/companyProductPrice.service");
 
 const startServer = async () => {
     await connectDB();
@@ -18,6 +21,7 @@ const startServer = async () => {
     await ensureProductAliases();
     await ensureProductThresholds();
     await ensureCompanyPdfFileOrder();
+    await ensureCompanyProductPriceIndexes();
 
     app.listen(env.port, "0.0.0.0", () => {
         console.log(`Server running on port ${env.port}`);
