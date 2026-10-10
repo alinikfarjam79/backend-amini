@@ -429,6 +429,37 @@ const ensureProductEnableDefaults = async () => {
   return productRepository.ensureEnableDefaults();
 };
 
+const getNewProductList = (products, bulkWriteResult) => {
+  let upsertedEntries = [];
+
+  if (bulkWriteResult?.upsertedIds) {
+    upsertedEntries = Object.entries(bulkWriteResult.upsertedIds).map(
+      ([index, id]) => ({ index: Number(index), id })
+    );
+  } else if (typeof bulkWriteResult?.getUpsertedIds === "function") {
+    upsertedEntries = bulkWriteResult.getUpsertedIds();
+  }
+
+  return upsertedEntries
+    .sort((first, second) => first.index - second.index)
+    .map(({ index, id }) => {
+      const product = products[index];
+
+      if (!product) {
+        return null;
+      }
+
+      return {
+        _id: id,
+        productCode: product.productCode,
+        title: product.title,
+        barcode: product.barcode || null,
+        originalPrice: product.originalPrice,
+      };
+    })
+    .filter(Boolean);
+};
+
 const uploadProductExcel = async (file) => {
   if (!file) {
     throw new AppError("Product Excel is required", 400);
@@ -494,6 +525,7 @@ const uploadProductExcel = async (file) => {
   const zeroPriceRows = zeroPriceProducts.length;
   const inserted = result.upsertedCount || 0;
   const updated = result.modifiedCount || 0;
+  const newProductList = getNewProductList(products, result);
 
   return {
     totalRows,
@@ -501,6 +533,7 @@ const uploadProductExcel = async (file) => {
     invalidRows,
     zeroPriceRows,
     newProducts: inserted,
+    newProductList,
     updatedProducts: updated,
     createdInvalidPriceRows,
     skippedInvalidPriceRows,

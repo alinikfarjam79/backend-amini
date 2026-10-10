@@ -162,7 +162,11 @@ test("price upload updates disabled products but still skips invalid prices", as
   ];
   productRepository.bulkUpsert = async (products) => {
     upsertedProducts = products;
-    return { modifiedCount: products.length, upsertedCount: 0 };
+    return {
+      modifiedCount: 1,
+      upsertedCount: 1,
+      upsertedIds: { 1: "new-active-id" },
+    };
   };
   productRepository.bulkCreateMissingWithZeroPrice = async () => ({});
 
@@ -178,7 +182,17 @@ test("price upload updates disabled products but still skips invalid prices", as
     "DISABLED",
     "ACTIVE",
   ]);
-  assert.equal(result.updatedProducts, 2);
+  assert.equal(result.updatedProducts, 1);
+  assert.equal(result.newProducts, 1);
+  assert.deepEqual(result.newProductList, [
+    {
+      _id: "new-active-id",
+      productCode: "ACTIVE",
+      title: "Active",
+      barcode: "A",
+      originalPrice: 200,
+    },
+  ]);
   assert.equal(result.skippedInvalidPriceProducts[0].row, 4);
   assert.equal(result.invalidRows, 1);
 });
