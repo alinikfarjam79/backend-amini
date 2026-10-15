@@ -6,6 +6,7 @@ const morgan = require("morgan");
 
 const env = require("./config/env");
 const routes = require("./routes");
+const AppError = require("./shared/utils/AppError");
 
 const apiRateLimiter = require("./shared/middlewares/apiRateLimit.middleware");
 const notFoundMiddleware = require("./shared/middlewares/notFound.middleware");
@@ -19,6 +20,8 @@ const allowedOrigins = [
   "https://localhost:3000",
   "https://127.0.0.1:3000",
   "https://127.0.0.1:4000",
+  "https://tarabarchi.ir",
+  "https://www.tarabarchi.ir",
   env.clientUrl,
   ...env.allowedOrigins,
 ].filter(Boolean);
@@ -40,7 +43,7 @@ app.use(
         return callback(null, true);
       }
 
-      return callback(new Error("Not allowed by CORS"));
+      return callback(new AppError("Not allowed by CORS", 403));
     },
 
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
